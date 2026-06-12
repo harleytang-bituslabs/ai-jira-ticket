@@ -1,0 +1,30 @@
+{
+  "name": "ai-jira-ticket",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI agent that turns colloquial descriptions into spec-compliant Jira tickets (spec lives in Confluence)",
+  "scripts": {
+    "ajt": "tsx src/cli/index.ts",
+    "fetch-issues": "tsx scripts/fetch-issues.ts",
+    "fetch-users": "tsx scripts/fetch-users.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
+    "commander": "^14.0.3",
+    "dotenv": "^17.4.2",
+    "marklassian": "^1.2.1",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "@types/turndown": "^5.0.6",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
