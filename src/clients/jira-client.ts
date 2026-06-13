@@ -272,6 +272,8 @@ export interface CreateIssueInput {
   parentKey?: string;
   /** From findUserAccountId. */
   assigneeAccountId?: string;
+  /** From findUserAccountId. Needs "Modify Reporter" permission on the project. */
+  reporterAccountId?: string;
   /** YYYY-MM-DD. */
   dueDate?: string;
   /** Merged last — escape hatch for required custom fields (config.staticFields). */
@@ -288,6 +290,7 @@ export async function createIssue(input: CreateIssueInput): Promise<{ key: strin
     ...(input.labels?.length ? { labels: input.labels } : {}),
     ...(input.parentKey ? { parent: { key: input.parentKey } } : {}),
     ...(input.assigneeAccountId ? { assignee: { id: input.assigneeAccountId } } : {}),
+    ...(input.reporterAccountId ? { reporter: { id: input.reporterAccountId } } : {}),
     ...(input.dueDate ? { duedate: input.dueDate } : {}),
     ...input.extraFields,
   };

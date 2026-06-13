@@ -1,5 +1,16 @@
 {
   "projectKey": "AIP",
+  "reporters": [
+    { "name": "Jack Liao", "email": "jack.liao@bituslabs.com" },
+    { "name": "Jing Lang", "email": "jing.lang@bituslabs.com" }
+  ],
+  "teamMembers": [
+    { "name": "Jack Liao", "email": "jack.liao@bituslabs.com" },
+    { "name": "Stella Zhou", "email": "stella.zhou@bituslabs.com" },
+    { "name": "William Gu", "email": "william.gu@bituslabs.com" },
+    { "name": "Yu-Hsin Weng", "email": "yuhsin.weng@bituslabs.com" },
+    { "name": "Harley Tang", "email": "harley.tang@bituslabs.com" }
+  ],
   "specPageUrls": ["https://bituslabs.atlassian.net/wiki/spaces/hub/pages/1093533697/JIRA?atlOrigin=eyJpIjoiMzcyZDY1MmRkMjBlNGE5OWFmNzQxMWIxOWIzNjRjNjkiLCJwIjoiY29uZmx1ZW5jZS1jaGF0cy1pbnQifQ"],
   "defaultPriority": "P2",
   "staticFields": {},

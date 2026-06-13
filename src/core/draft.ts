@@ -28,6 +28,16 @@ export interface DraftOptions {
   history?: ChatMessage[];
   /** Bounded retries when cross-validation fails (default 2). */
   maxRepair?: number;
+  /**
+   * Hard requirement on ticket count: 1 = don't split, N = exactly N tickets,
+   * undefined = the model decides. Enforced via the repair loop.
+   */
+  splitCount?: number;
+  /**
+   * One-line directive appended to the user message — e.g. field values the
+   * filer pre-chose in the web form. Ephemeral: not persisted in meta.input.
+   */
+  fieldDirectives?: string;
   onProgress?: (message: string) => void;
 }
 
@@ -44,7 +54,16 @@ export async function draftTickets(input: string, opts: DraftOptions): Promise<D
   }
 
   const system = await buildSystemPrompt(spec.markdown, meta, config);
-  let messages: ChatMessage[] = [...(opts.history ?? []), { role: "user", content: input }];
+  // The split requirement rides on the user message (never the system prompt,
+  // which must stay byte-stable for the Anthropic prompt cache).
+  const splitRule =
+    opts.splitCount == null
+      ? ""
+      : opts.splitCount <= 1
+        ? "\n\n[拆票要求: 不要拆分，输出恰好 1 张票]"
+        : `\n\n[拆票要求: 必须拆成恰好 ${opts.splitCount} 张票]`;
+  const directives = opts.fieldDirectives ? `\n\n${opts.fieldDirectives}` : "";
+  let messages: ChatMessage[] = [...(opts.history ?? []), { role: "user", content: input + splitRule + directives }];
 
   for (let attempt = 0; ; attempt++) {
     send(attempt === 0 ? "生成草稿中…" : `修复重试 ${attempt}/${maxRepair} …`);
@@ -59,7 +78,11 @@ export async function draftTickets(input: string, opts: DraftOptions): Promise<D
     );
 
     const checked = DraftPayloadSchema.safeParse(output);
-    if (checked.success) {
+    const countProblem =
+      checked.success && opts.splitCount != null && checked.data.tickets.length !== Math.max(1, opts.splitCount)
+        ? `输出了 ${checked.data.tickets.length} 张票，但拆票要求是恰好 ${Math.max(1, opts.splitCount)} 张`
+        : null;
+    if (checked.success && !countProblem) {
       return {
         meta: {
           version: 1,
@@ -70,13 +93,15 @@ export async function draftTickets(input: string, opts: DraftOptions): Promise<D
           specVersions: spec.sources.map((s) => s.version),
           model: config.model,
         },
-        tickets: checked.data.tickets,
+        tickets: checked.data.tickets.map((t) => ({ ...t, reporter: null })),
         links: checked.data.links.map((l) => ({ ...l, created: false })),
         notes: checked.data.notes,
       };
     }
 
-    const problems = checked.error.issues.map((i) => `- ${i.message}`).join("\n");
+    const problems = checked.success
+      ? `- ${countProblem}`
+      : checked.error.issues.map((i) => `- ${i.message}`).join("\n");
     if (attempt >= maxRepair) {
       throw new Error(`草稿交叉校验在 ${attempt + 1} 次尝试后仍未通过:\n${problems}`);
     }

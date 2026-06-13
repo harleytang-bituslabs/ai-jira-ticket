@@ -142,11 +142,14 @@ export async function submitDraft(input: DraftFile, opts: SubmitOptions): Promis
     return key;
   };
 
-  // Resolve every assignee before any mutation so a bad name aborts cleanly.
+  // Resolve every assignee/reporter before any mutation so a bad name aborts cleanly.
   const accountIds = new Map<string, string>();
   for (const t of ordered) {
-    if (!t.jiraKey && t.assignee && !accountIds.has(t.assignee)) {
-      accountIds.set(t.assignee, await findUserAccountId(t.assignee));
+    if (t.jiraKey) continue;
+    for (const person of [t.assignee, t.reporter]) {
+      if (person && !accountIds.has(person)) {
+        accountIds.set(person, await findUserAccountId(person));
+      }
     }
   }
 
@@ -165,6 +168,7 @@ export async function submitDraft(input: DraftFile, opts: SubmitOptions): Promis
         labels: t.labels,
         ...(t.parent ? { parentKey: resolveRef(t.parent) } : {}),
         ...(t.assignee ? { assigneeAccountId: accountIds.get(t.assignee)! } : {}),
+        ...(t.reporter ? { reporterAccountId: accountIds.get(t.reporter)! } : {}),
         ...(t.dueDate ? { dueDate: t.dueDate } : {}),
         extraFields: opts.config.staticFields,
       });

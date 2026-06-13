@@ -1,22 +1,22 @@
 /**
- * Local cache written by sync-spec and read by draft/submit.
- *
- * Two files under the cache dir:
- *   - spec.md          — the ticketing conventions as markdown, with a small
- *                        frontmatter recording where/when it came from. The
- *                        body is injected byte-for-byte into the system
- *                        prompt, which is what makes Anthropic prompt caching
- *                        effective across draft calls.
+ * Local caches under the cache dir, written by sync-spec / fetch-issues and
+ * read by draft, submit and the web UI:
+ *   - spec.md           — ticketing conventions as markdown with frontmatter
+ *                         (source/version/syncedAt). The body is injected
+ *                         byte-for-byte into system prompts, which is what
+ *                         makes Anthropic prompt caching effective.
  *   - project-meta.json — issue types / priorities / link types from Jira.
+ *   - issues.json       — the project's tickets (npm run fetch-issues).
  */
 
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ProjectMeta } from "../clients/jira-client.js";
+import type { JiraIssueSummary, ProjectMeta } from "../clients/jira-client.js";
 import { atomicWrite } from "../utils/fs.js";
 
 const SPEC_FILE = "spec.md";
 const META_FILE = "project-meta.json";
+const ISSUES_FILE = "issues.json";
 
 export interface SpecSource {
   url: string;
@@ -80,4 +80,25 @@ export function cacheAgeDays(cache: SpecCache): number {
   const t = Date.parse(cache.syncedAt);
   if (Number.isNaN(t)) return Number.POSITIVE_INFINITY;
   return Math.floor((Date.now() - t) / 86_400_000);
+}
+
+// ─── Board snapshot (issues.json, written by `npm run fetch-issues`) ────────
+
+export interface IssuesCache {
+  projectKey: string;
+  fetchedAt: string;
+  issues: JiraIssueSummary[];
+}
+
+export async function writeIssuesCache(dir: string, cache: IssuesCache): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  await atomicWrite(join(dir, ISSUES_FILE), JSON.stringify(cache, null, 2) + "\n");
+}
+
+export async function readIssuesCache(dir: string): Promise<IssuesCache> {
+  try {
+    return JSON.parse(await readFile(join(dir, ISSUES_FILE), "utf-8")) as IssuesCache;
+  } catch {
+    throw new Error(`No issues cache at ${dir}/${ISSUES_FILE} — run \`npm run fetch-issues\` first`);
+  }
 }

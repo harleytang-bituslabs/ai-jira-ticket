@@ -9,26 +9,21 @@
 
 import "dotenv/config";
 import { join } from "node:path";
-import { mkdir } from "node:fs/promises";
 import { searchIssues } from "../src/clients/jira-client.js";
 import { loadConfig } from "../src/core/config.js";
-import { atomicWrite } from "../src/utils/fs.js";
+import { writeIssuesCache } from "../src/core/spec-cache.js";
 
 const config = await loadConfig(process.argv[2] ?? "config.json");
 
 console.log(`拉取项目 ${config.projectKey} 的全部票据 …`);
 const issues = await searchIssues(`project = ${config.projectKey} ORDER BY created ASC`);
 
-await mkdir(config.cacheDir, { recursive: true });
 const outPath = join(config.cacheDir, "issues.json");
-await atomicWrite(
-  outPath,
-  JSON.stringify(
-    { projectKey: config.projectKey, fetchedAt: new Date().toISOString(), total: issues.length, issues },
-    null,
-    2,
-  ) + "\n",
-);
+await writeIssuesCache(config.cacheDir, {
+  projectKey: config.projectKey,
+  fetchedAt: new Date().toISOString(),
+  issues,
+});
 
 const byType = new Map<string, number>();
 for (const i of issues) byType.set(i.issueType, (byType.get(i.issueType) ?? 0) + 1);

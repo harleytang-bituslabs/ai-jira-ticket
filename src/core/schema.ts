@@ -16,9 +16,8 @@
 import { z } from "zod";
 
 export const LOCAL_ID_RE = /^t\d+$/;
-/** A real Jira issue key, e.g. "AIP-12" — used to reference pre-existing issues (typically Epics). */
-export const JIRA_KEY_RE = /^[A-Z][A-Z0-9]*-\d+$/;
-const REF_RE = /^(t\d+|[A-Z][A-Z0-9]*-\d+)$/;
+/** A parent/link reference: a draft-local id ("t1") or a real Jira key like "AIP-12". */
+const REF_RE = /^(?:t\d+|[A-Z][A-Z0-9]*-\d+)$/;
 
 export function isLocalId(ref: string): boolean {
   return LOCAL_ID_RE.test(ref);
@@ -139,6 +138,8 @@ export const DraftFileSchema = z
     tickets: z
       .array(
         TicketSchema.extend({
+          /** Set by the human/UI (not the LLM); resolved to an accountId at submit. */
+          reporter: z.string().nullable().default(null),
           /** Written back by submit ⇒ re-running skips already-created tickets. */
           jiraKey: z.string().optional(),
           jiraUrl: z.string().optional(),
@@ -153,4 +154,3 @@ export const DraftFileSchema = z
 export type DraftPayload = z.infer<typeof DraftPayloadSchema>;
 export type DraftFile = z.infer<typeof DraftFileSchema>;
 export type Ticket = DraftFile["tickets"][number];
-export type DraftLink = DraftFile["links"][number];
