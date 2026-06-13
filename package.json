@@ -6,6 +6,7 @@
   "description": "AI agent that turns colloquial descriptions into spec-compliant Jira tickets (spec lives in Confluence)",
   "scripts": {
     "ajt": "tsx src/cli/index.ts",
+    "web": "tsx src/server/index.ts",
     "fetch-issues": "tsx scripts/fetch-issues.ts",
     "fetch-users": "tsx scripts/fetch-users.ts",
     "test": "vitest run",

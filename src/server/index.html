@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ajt · AI 开票</title>
+<style>
+  :root { --line:#d9dce3; --muted:#6b7280; --accent:#1d4ed8; --bg:#f5f6f8; --green:#047857; --green-bg:#ecfdf5; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:#16181d; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header { display:flex; align-items:center; gap:16px; width:80%; margin:0 auto; padding:18px 0 0; }
+  header h1 { font-size:20px; margin:0; white-space:nowrap; }
+  header .sub { color:var(--muted); font-size:13px; flex:1; }
+  nav { white-space:nowrap; }
+  nav button { background:none; border:0; font:inherit; font-size:14px; padding:8px 2px; margin-left:16px; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent; }
+  nav button.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+  main { width:80%; margin:0 auto; padding:8px 0 56px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px; margin-top:14px; }
+  label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; }
+  .card > label:first-child { margin-top:0; }
+  textarea, input, select { font:inherit; font-size:14px; padding:8px 9px; border:1px solid var(--line); border-radius:7px; background:#fff; }
+  textarea { width:100%; resize:vertical; }
+  input[data-f="summary"] { width:100%; }
+  button.primary, button.ghost, button.danger { font:inherit; font-size:14px; padding:9px 16px; border-radius:8px; cursor:pointer; border:1px solid transparent; }
+  button.primary { color:#fff; background:var(--accent); font-weight:600; }
+  button.ghost { background:#fff; border-color:var(--line); }
+  button.danger { background:#fff; border-color:var(--line); color:#b91c1c; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .status { font-size:13px; color:var(--muted); white-space:pre-wrap; }
+  .status.error { color:#b91c1c; }
+  .status.ok { color:var(--green); }
+  .hint { font-size:12px; color:var(--muted); margin-top:6px; }
+  .invalid { border-color:#dc2626 !important; background:#fef2f2 !important; }
+
+  .composeFoot { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-top:14px; flex-wrap:wrap; }
+  .composeFoot .left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .composeFoot .right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; border-right:1px solid var(--line); background:#fff; padding:0 14px; height:34px; font:inherit; font-size:13px; cursor:pointer; color:var(--muted); }
+  .seg button:last-child { border-right:0; }
+  /* 选中态不改字重（粗体会撑宽按钮导致组宽度抖动），只用颜色区分 */
+  .seg button.active { background:var(--accent); color:#fff; }
+  /* 值级配色：未选中与普通按钮一致（白底灰字），选中上对应颜色白字（--c 由 JS 注入） */
+  .seg button[data-c].active { background: var(--c); color:#fff; }
+  #splitN { width:80px; }
+
+  .chip { display:inline-block; font-size:12px; padding:2px 9px; border-radius:99px; vertical-align:middle; white-space:nowrap; }
+  .chip.draft { background:#eef0f3; color:#374151; }
+  .chip.submitted { background:var(--green-bg); color:var(--green); }
+
+  .ticket { border:1px solid var(--line); border-radius:10px; padding:14px; margin-top:12px; background:#fff; }
+  .ticket.done { background:#fbfdfc; }
+  /* 顶栏整体可换行：所有元素自然流动，放不下就整组换行，任何元素都不会被裁出容器 */
+  .ticket .head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .ticket .head .lid { font-weight:700; font-size:13px; color:var(--muted); }
+  .ticket .head select, .ticket .head input[type=date] { width:auto; min-width:96px; font-size:13px; padding:6px 8px; }
+  /* 父级框弹性伸缩：只设下限、上不封顶，吸收行内全部富余宽度；
+     窗口变窄时它先收缩，压到下限后才允许换行（按钮可换行但绝不溢出隐藏） */
+  .ticket .head .parent { flex:1 1 auto; min-width:56px; }
+  .ticket .head .del { white-space:nowrap; }
+  .ticket .ro-summary { font-weight:600; }
+  .ticket .ro-meta { font-size:13px; color:var(--muted); margin-top:6px; }
+  .ticket details { margin-top:8px; }
+  .ticket details pre { white-space:pre-wrap; font:13px/1.6 inherit; background:#f8f9fb; padding:10px; border-radius:8px; margin:6px 0 0; }
+
+  .linkchip { display:inline-flex; gap:6px; align-items:center; font-size:13px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px; padding:4px 10px; margin:6px 8px 0 0; }
+  .linkchip button { border:0; background:none; cursor:pointer; color:#6b7280; padding:0; font-size:14px; }
+
+  .frow { display:flex; gap:18px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-start; }
+  .frow .fgroup { flex:0 1 auto; }
+  .frow .fgroup.grow { flex:1; min-width:280px; }
+  .fgroup label { margin:0 0 5px; }
+  .parentPick { display:flex; gap:8px; }
+  .parentPick select { flex:1; min-width:0; }
+  #cDueDate { width:160px; height:36px; font-size:13px; }
+  .seg.disabled { opacity:.45; pointer-events:none; }
+  .seg.lone button { cursor:default; }
+
+  .hist { border:1px solid var(--line); border-radius:10px; background:#fff; padding:14px 16px; margin-top:12px; }
+  .hist .top { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+  .hist .when { font-size:13px; color:var(--muted); white-space:nowrap; }
+  .hist .input-excerpt { flex:1; min-width:200px; font-size:14px; }
+  .hist .trow { display:flex; gap:10px; align-items:center; font-size:13px; margin-top:8px; }
+  .hist .trow .sum { flex:1; min-width:160px; }
+  .hist .trow a { color:var(--accent); font-weight:600; text-decoration:none; }
+  .hist .actions { margin-top:10px; display:flex; gap:8px; }
+  .toolbar { display:flex; align-items:center; gap:12px; margin-top:14px; }
+  .toolbar .status { flex:1; }
+  .empty { color:var(--muted); text-align:center; padding:36px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ajt · AI 开票</h1>
+  <span class="sub" id="proj">加载中…</span>
+  <nav>
+    <button id="tabCreate" class="active">开票</button>
+    <button id="tabHistory">历史</button>
+  </nav>
+</header>
+<main>
+
+<div id="viewCreate">
+  <section class="card">
+    <div class="frow">
+      <div class="fgroup"><label>优先级</label><span class="seg" id="cPriority"></span></div>
+      <div class="fgroup"><label>类型</label><span class="seg" id="cIssueType"></span></div>
+      <div class="fgroup grow"><label>父级</label>
+        <div class="parentPick">
+          <select id="cParentEpic" hidden></select>
+          <select id="cParent"></select>
+        </div>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="fgroup"><label>指派给</label><span class="seg" id="cAssignee"></span></div>
+      <div class="fgroup"><label>Reporter</label><span class="seg" id="cReporter"></span></div>
+      <div class="fgroup"><label>截止日期</label><input type="date" id="cDueDate"></div>
+    </div>
+    <label for="input">需求描述（口语化描述要做的事即可）</label>
+    <textarea id="input" rows="4" placeholder="例：给数据看板加导出 PDF 报告功能，需要后端生成接口和前端下载入口"></textarea>
+    <div class="composeFoot">
+      <div class="left">
+        <span style="font-size:13px;color:var(--muted)">拆票方式</span>
+        <span class="seg" id="splitSeg">
+          <button data-mode="" class="active">AI 自行决定</button>
+          <button data-mode="1">不拆（单票）</button>
+          <button data-mode="n">指定数量</button>
+        </span>
+        <input type="number" id="splitN" min="2" max="20" value="2" hidden>
+      </div>
+      <div class="right">
+        <span class="status" id="draftStatus"></span>
+        <button class="ghost" id="refreshBtn">更新config</button>
+        <button class="primary" id="draftBtn">AI 开票</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="editor" hidden>
+    <div id="cards"></div>
+    <div id="links"></div>
+    <div id="notes" class="hint"></div>
+
+    <div class="toolbar">
+      <button class="ghost" id="saveBtn">保存草稿</button>
+      <button class="primary" id="submitBtn">提交到 Jira</button>
+      <span class="status" id="editStatus"></span>
+    </div>
+  </div>
+</div>
+
+<div id="viewHistory" hidden>
+  <div class="toolbar">
+    <button class="ghost" id="cleanupBtn">清理已完结</button>
+    <span class="hint">删除所有票都已提交的本地记录；只动本地档案，不影响 Jira 上的票</span>
+  </div>
+  <div id="historyList"></div>
+</div>
+
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+let META = null;
+let ORDERED_TYPES = []; // 类型固定顺序（Bug 殿后），开票表单与卡片共用
+let current = null; // { id, draft } loaded in the editor
+let splitMode = ""; // "" = AI 自行决定, "1" = 不拆, "n" = 指定数量
+
+async function api(method, url, body) {
+  const r = await fetch(url, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok || data.error) {
+    const err = new Error(data.error || `HTTP ${r.status}`);
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+function setStatus(el, text, cls) { el.textContent = text || ""; el.className = "status" + (cls ? " " + cls : ""); }
+const isSubmitted = (t) => Boolean(t.jiraKey);
+
+
+// ─── 必填规则（提交前强制）────────────────────────────────────────────────────
+// 父级、截止日期必填；优先级必填但 Sub-task 例外（规范规定 Sub-task 不使用优先级）；
+// 指派对 Sub-task 必填（Jira 创建门要求），其他类型可选。
+function missingFields(t) {
+  const miss = [];
+  if (t.issueType !== "Epic" && !t.parent) miss.push("父级");
+  if (t.issueType !== "Sub-task" && !t.priority) miss.push("优先级");
+  if (!t.dueDate) miss.push("截止日期");
+  if (t.issueType === "Sub-task" && !t.assignee) miss.push("指派");
+  return miss;
+}
+const FIELD_TO_CONTROL = { 父级: "parent", 优先级: "priority", 截止日期: "dueDate", 指派: "assignee" };
+
+// ─── meta + 顶部 ─────────────────────────────────────────────────────────────
+
+// 开票前置字段的状态（seg 按钮组的选中值都在这里）
+const cState = { issueType: "Task", priority: "P2", assignee: null, reporter: null };
+
+function buildSeg(el, items, selected, onPick) {
+  el.innerHTML = "";
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = it.label;
+    if (it.color) { b.dataset.c = "1"; b.style.setProperty("--c", it.color); }
+    b.classList.toggle("active", it.value === selected);
+    b.onclick = () => {
+      onPick(it.value);
+      for (const x of el.children) x.classList.toggle("active", x === b);
+      el.classList.remove("invalid");
+    };
+    el.append(b);
+  }
+}
+
+async function loadMeta() {
+  META = await api("GET", "/api/meta");
+  $("proj").textContent = `项目 ${META.projectKey} · 父级候选缓存于 ${new Date(META.issuesFetchedAt).toLocaleString()}`;
+
+  // 类型：蓝色深浅表层级（Story/Task 同级同色），Bug 殿后用暖色警示
+  const TYPE_ORDER = ["Epic", "Story", "Task", "Sub-task", "Bug"];
+  const TYPE_COLORS = { Epic: "#1e3a8a", Story: "#1d4ed8", Task: "#1d4ed8", "Sub-task": "#3b82f6", Bug: "#f59e0b" };
+  // 优先级：红橙黄绿灰，取干净鲜亮的现代 UI 色（P1/P2 向黄偏移拉开层次）
+  const PRIORITY_COLORS = { P0: "#ef4444", P1: "#f59e0b", P2: "#ffd60a", P3: "#22c55e", Lowest: "#94a3b8" };
+  ORDERED_TYPES = [...META.issueTypes].sort((a, b) => {
+    const ia = TYPE_ORDER.indexOf(a.name), ib = TYPE_ORDER.indexOf(b.name);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  if (!ORDERED_TYPES.some((x) => x.name === cState.issueType)) cState.issueType = ORDERED_TYPES[0]?.name;
+  if (!META.priorities.includes(cState.priority)) cState.priority = META.priorities[0];
+  buildSeg($("cIssueType"), ORDERED_TYPES.map((x) => ({ label: x.name, value: x.name, color: TYPE_COLORS[x.name] })), cState.issueType, (v) => {
+    cState.issueType = v;
+    refreshComposeParent();
+  });
+  buildSeg($("cPriority"), META.priorities.map((p) => ({ label: p, value: p, color: PRIORITY_COLORS[p] })), cState.priority, (v) => {
+    cState.priority = v;
+  });
+  buildSeg($("cAssignee"), META.teamMembers.map((m) => ({ label: m.name, value: m.email })), cState.assignee, (v) => {
+    cState.assignee = v;
+  });
+  const reporters = META.reporters?.length ? META.reporters : META.teamMembers.slice(0, 1);
+  if (!reporters.some((r) => r.email === cState.reporter)) cState.reporter = reporters[0]?.email ?? null;
+  buildSeg($("cReporter"), reporters.map((m) => ({ label: m.name, value: m.email })), cState.reporter, (v) => {
+    cState.reporter = v;
+  });
+
+  $("cParentEpic").onchange = () => { $("cParentEpic").classList.remove("invalid"); refreshSubParentOptions(); };
+  refreshComposeParent();
+  // 赋值式绑定（非 addEventListener）：loadMeta 每次「更新config」都会重跑，赋值幂等、不会叠加监听器
+  for (const id of ["cParent", "cDueDate"]) $(id).onchange = (e) => e.target.classList.remove("invalid");
+}
+
+// Sub-task 的父级两级联动：先选 Epic，再列该 Epic 下的 Story/Task
+function refreshSubParentOptions() {
+  const epicKey = $("cParentEpic").value;
+  const pool = epicKey ? META.standardParents.filter((i) => i.parent === epicKey) : [];
+  fillSelect(
+    $("cParent"),
+    pool.map((i) => ({ label: `${i.key} · ${i.summary.slice(0, 48)}`, value: i.key })),
+    epicKey ? (pool.length ? "选 Story/Task（必填）" : "该 Epic 下暂无 Story/Task") : "← 先选 Epic",
+  );
+}
+
+function refreshComposeParent() {
+  const type = cState.issueType;
+  const epicSel = $("cParentEpic");
+  const sel = $("cParent");
+  if (type === "Epic") {
+    epicSel.hidden = true;
+    fillSelect(sel, [], "（Epic 无父级）");
+    sel.disabled = true;
+  } else if (type === "Sub-task") {
+    epicSel.hidden = false;
+    sel.disabled = false;
+    fillSelect(epicSel, META.epics.map((i) => ({ label: `${i.key} · ${i.summary.slice(0, 40)}`, value: i.key })), "Epic（先选）");
+    refreshSubParentOptions();
+  } else {
+    epicSel.hidden = true;
+    sel.disabled = false;
+    fillSelect(sel, META.epics.map((i) => ({ label: `${i.key} · ${i.summary.slice(0, 48)}`, value: i.key })), "父级（必填）");
+  }
+  const pr = $("cPriority");
+  const isSub = type === "Sub-task";
+  pr.classList.toggle("disabled", isSub);
+  pr.title = isSub ? "规范规定 Sub-task 不使用优先级" : "";
+  if (isSub) {
+    cState.priority = null;
+    for (const x of pr.children) x.classList.remove("active");
+  } else if (!cState.priority) {
+    cState.priority = META.priorities.includes("P2") ? "P2" : META.priorities[0];
+    for (const x of pr.children) x.classList.toggle("active", x.textContent === cState.priority);
+  }
+}
+
+function fillSelect(sel, items, blankLabel, value) {
+  sel.innerHTML = "";
+  if (blankLabel !== undefined) sel.append(new Option(blankLabel, ""));
+  for (const it of items) sel.append(new Option(it.label, it.value));
+  if (value !== undefined) sel.value = value ?? "";
+}
+
+// ─── 卡片渲染（新拆票与历史继续编辑共用这一份） ───────────────────────────────
+
+function parentOptions(t) {
+  const siblings = current.draft.tickets
+    .filter((s) => s.localId !== t.localId)
+    .filter((s) => (t.issueType === "Sub-task" ? s.issueType !== "Sub-task" && s.issueType !== "Epic" : s.issueType === "Epic"))
+    .map((s) => ({ label: `本批 ${s.localId} · ${s.summary.slice(0, 40)}`, value: s.localId }));
+  const board = (t.issueType === "Sub-task" ? META.standardParents : META.epics).map((i) => ({
+    label: `${i.key} · ${i.summary.slice(0, 48)}`,
+    value: i.key,
+  }));
+  return [...siblings, ...board];
+}
+
+function renderEditor() {
+  const cards = $("cards");
+  cards.innerHTML = "";
+  if (!current) { $("editor").hidden = true; return; }
+  $("editor").hidden = false;
+
+  for (const t of current.draft.tickets) cards.append(buildCard(t));
+
+  const linksDiv = $("links");
+  linksDiv.innerHTML = "";
+  for (const l of current.draft.links) {
+    const chip = document.createElement("span");
+    chip.className = "linkchip";
+    chip.innerHTML = `${esc(l.from)} <b>${esc(l.type)}</b> ${esc(l.to)}${l.created ? " ✓" : ""}`;
+    if (!l.created) {
+      const x = document.createElement("button");
+      x.textContent = "✕";
+      x.title = "删除该关联";
+      x.onclick = () => { current.draft.links = current.draft.links.filter((q) => q !== l); renderEditor(); };
+      chip.append(x);
+    }
+    linksDiv.append(chip);
+  }
+  $("notes").textContent = current.draft.notes ? `AI 说明: ${current.draft.notes}` : "";
+
+  const allDone = current.draft.tickets.every(isSubmitted);
+  $("submitBtn").disabled = allDone;
+  $("saveBtn").disabled = allDone;
+}
+
+function buildCard(t) {
+  const div = document.createElement("div");
+  div.dataset.lid = t.localId;
+  div.className = "ticket" + (isSubmitted(t) ? " done" : "");
+
+  if (isSubmitted(t)) {
+    div.innerHTML = `
+      <div class="head">
+        <span class="lid">${esc(t.localId)}</span>
+        <span class="chip submitted">已提交</span>
+        <a href="${esc(t.jiraUrl || "#")}" target="_blank" style="font-weight:700;color:var(--accent)">${esc(t.jiraKey)}</a>
+      </div>
+      <div class="ro-summary" style="margin-top:8px">${esc(t.summary)}</div>
+      <div class="ro-meta">${esc(t.issueType)}${t.priority ? " · " + esc(t.priority) : ""}${t.parent ? " · 父级 " + esc(t.parent) : ""}${t.assignee ? " · " + esc(t.assignee) : ""}${t.dueDate ? " · 截止 " + esc(t.dueDate) : ""}</div>
+      <details><summary style="cursor:pointer;font-size:13px;color:var(--muted)">查看正文</summary><pre>${esc(t.description)}</pre></details>`;
+    return div;
+  }
+
+  div.innerHTML = `
+    <div class="head">
+      <span class="lid">${esc(t.localId)}</span>
+      <span class="chip draft">草稿</span>
+      <select data-f="priority"></select>
+      <select data-f="issueType"></select>
+      <select data-f="parent" class="parent"></select>
+      <select data-f="assignee"></select>
+      <input type="date" data-f="dueDate">
+      <button class="danger del" data-f="del">删除此票</button>
+    </div>
+    <label>标题</label><input data-f="summary">
+    <label>正文 markdown</label><textarea data-f="description" rows="9"></textarea>`;
+
+  const q = (f) => div.querySelector(`[data-f="${f}"]`);
+  fillSelect(q("issueType"), ORDERED_TYPES.map((x) => ({ label: x.name, value: x.name })), undefined, t.issueType);
+  fillSelect(q("priority"), META.priorities.map((p) => ({ label: p, value: p })), "优先级（必填）", t.priority ?? "");
+  fillSelect(q("parent"), parentOptions(t), "父级（必填）", t.parent ?? "");
+  fillSelect(q("assignee"), META.teamMembers.map((m) => ({ label: m.name, value: m.email })), "不指派", t.assignee ?? "");
+  q("dueDate").value = t.dueDate ?? "";
+  q("summary").value = t.summary;
+  q("description").value = t.description;
+  if (t.issueType === "Sub-task") {
+    q("priority").disabled = true;
+    q("priority").title = "规范规定 Sub-task 不使用优先级";
+  }
+  if (t.issueType === "Epic") {
+    q("parent").disabled = true;
+  }
+
+  const clearInvalid = (el) => el.classList.remove("invalid");
+  q("issueType").onchange = (e) => {
+    t.issueType = e.target.value;
+    t.parent = null;
+    if (t.issueType === "Sub-task") t.priority = null;
+    renderEditor();
+  };
+  q("priority").onchange = (e) => { t.priority = e.target.value || null; clearInvalid(e.target); };
+  q("parent").onchange = (e) => { t.parent = e.target.value || null; clearInvalid(e.target); };
+  q("assignee").onchange = (e) => { t.assignee = e.target.value || null; clearInvalid(e.target); };
+  q("dueDate").onchange = (e) => { t.dueDate = e.target.value || null; clearInvalid(e.target); };
+  q("summary").oninput = (e) => { t.summary = e.target.value; };
+  q("description").oninput = (e) => { t.description = e.target.value; };
+  q("del").onclick = async () => {
+    if (current.draft.tickets.length === 1) {
+      if (!confirm("这是最后一张票——将删除整条草稿记录（不影响 Jira）。确定？")) return;
+      await api("DELETE", `/api/drafts/${encodeURIComponent(current.id)}`);
+      current = null;
+      renderEditor();
+      setStatus($("draftStatus"), "草稿记录已删除", "ok");
+      return;
+    }
+    current.draft.tickets = current.draft.tickets.filter((x) => x !== t);
+    current.draft.links = current.draft.links.filter((l) => l.from !== t.localId && l.to !== t.localId);
+    for (const x of current.draft.tickets) if (x.parent === t.localId) x.parent = null;
+    renderEditor();
+  };
+  return div;
+}
+
+// 提交前校验：返回问题列表并高亮缺失控件
+function validateForSubmit() {
+  document.querySelectorAll(".ticket .invalid").forEach((el) => el.classList.remove("invalid"));
+  const problems = [];
+  for (const t of current.draft.tickets) {
+    if (isSubmitted(t)) continue;
+    const miss = missingFields(t);
+    if (!miss.length) continue;
+    problems.push(`${t.localId} 缺: ${miss.join("、")}`);
+    const card = document.querySelector(`.ticket[data-lid="${t.localId}"]`);
+    if (card) {
+      for (const m of miss) {
+        const ctl = card.querySelector(`[data-f="${FIELD_TO_CONTROL[m]}"]`);
+        if (ctl) ctl.classList.add("invalid");
+      }
+    }
+  }
+  return problems;
+}
+
+// ─── 开票流 ──────────────────────────────────────────────────────────────────
+
+$("refreshBtn").onclick = async () => {
+  $("refreshBtn").disabled = true;
+  $("draftBtn").disabled = true;
+  setStatus($("draftStatus"), "正在从 Confluence / Jira 拉取最新配置…");
+  try {
+    const r = await api("POST", "/api/refresh");
+    await loadMeta();
+    setStatus($("draftStatus"), `已更新: ${r.spec} · ${r.issueTotal} 张票（${r.epicTotal} 个 Epic）`, "ok");
+  } catch (e) {
+    setStatus($("draftStatus"), e.message, "error");
+  } finally {
+    $("refreshBtn").disabled = false;
+    $("draftBtn").disabled = false;
+  }
+};
+
+$("splitSeg").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-mode]");
+  if (!btn) return;
+  splitMode = btn.dataset.mode;
+  for (const b of $("splitSeg").querySelectorAll("button")) b.classList.toggle("active", b === btn);
+  $("splitN").hidden = splitMode !== "n";
+});
+
+$("draftBtn").onclick = async () => {
+  const input = $("input").value.trim();
+  if (!input) { setStatus($("draftStatus"), "先填需求描述", "error"); return; }
+
+  // 一次性给全信息：开票前就强制必填（指派必选一个人；Sub-task 不填优先级）
+  const type = cState.issueType;
+  const miss = [];
+  const mark = (el, bad) => { el.classList.toggle("invalid", bad); return bad; };
+  if (mark($("cPriority"), type !== "Sub-task" && !cState.priority)) miss.push("优先级");
+  if (type === "Sub-task") mark($("cParentEpic"), !$("cParentEpic").value);
+  if (mark($("cParent"), type !== "Epic" && !$("cParent").value)) miss.push(type === "Sub-task" ? "父级（先选 Epic 再选 Story/Task）" : "父级");
+  if (mark($("cAssignee"), !cState.assignee)) miss.push("指派给");
+  if (mark($("cDueDate"), !$("cDueDate").value)) miss.push("截止日期");
+  if (miss.length) { setStatus($("draftStatus"), `请先填: ${miss.join("、")}`, "error"); return; }
+
+  const splitCount = splitMode === "" ? null : splitMode === "1" ? 1 : Number($("splitN").value);
+  const defaults = {
+    issueType: type,
+    priority: cState.priority,
+    parentKey: $("cParent").value || null,
+    assignee: cState.assignee,
+    reporter: cState.reporter,
+    dueDate: $("cDueDate").value || null,
+  };
+  $("draftBtn").disabled = true;
+  setStatus($("draftStatus"), "AI 开票中…（十几秒）");
+  try {
+    const data = await api("POST", "/api/draft", { input, splitCount, defaults });
+    current = data;
+    renderEditor();
+    setStatus($("draftStatus"), `拆出 ${data.draft.tickets.length} 张，可在卡片里微调后提交`, "ok");
+    $("editor").scrollIntoView({ behavior: "smooth" });
+  } catch (e) {
+    setStatus($("draftStatus"), e.message, "error");
+  } finally {
+    $("draftBtn").disabled = false;
+  }
+};
+
+async function saveCurrent() {
+  const data = await api("PUT", `/api/drafts/${encodeURIComponent(current.id)}`, { draft: current.draft });
+  current = data;
+  renderEditor();
+}
+
+$("saveBtn").onclick = async () => {
+  try { await saveCurrent(); setStatus($("editStatus"), "已保存", "ok"); }
+  catch (e) { setStatus($("editStatus"), e.message, "error"); }
+};
+
+$("submitBtn").onclick = async () => {
+  const problems = validateForSubmit();
+  if (problems.length) {
+    setStatus($("editStatus"), `请补齐必填字段 — ${problems.join("；")}`, "error");
+    return;
+  }
+  $("submitBtn").disabled = true;
+  setStatus($("editStatus"), "保存并提交中…");
+  try {
+    await saveCurrent();
+    const data = await api("POST", `/api/drafts/${encodeURIComponent(current.id)}/submit`);
+    current = data;
+    renderEditor();
+    const keys = data.draft.tickets.map((t) => t.jiraKey).filter(Boolean);
+    setStatus($("editStatus"), `✓ 全部上板: ${keys.join("  ")}`, "ok");
+  } catch (e) {
+    if (e.data && e.data.draft) { current = { id: e.data.id, draft: e.data.draft }; renderEditor(); }
+    setStatus($("editStatus"), e.message, "error");
+  } finally {
+    $("submitBtn").disabled = false;
+  }
+};
+
+// ─── 历史 ────────────────────────────────────────────────────────────────────
+
+async function loadHistory() {
+  const list = $("historyList");
+  list.innerHTML = '<div class="empty">加载中…</div>';
+  const { drafts } = await api("GET", "/api/drafts");
+  list.innerHTML = "";
+  if (!drafts.length) { list.innerHTML = '<div class="empty">还没有开票记录</div>'; return; }
+
+  for (const entry of drafts) {
+    const d = entry.draft;
+    const submitted = d.tickets.filter(isSubmitted).length;
+    const div = document.createElement("div");
+    div.className = "hist";
+    div.innerHTML = `
+      <div class="top">
+        <span class="when">${new Date(d.meta.createdAt).toLocaleString()}</span>
+        <span class="input-excerpt">${esc(d.meta.input.slice(0, 80))}${d.meta.input.length > 80 ? "…" : ""}</span>
+        <span class="hint">${d.tickets.length} 张 · ${submitted} 已提交</span>
+      </div>
+      <div class="trows"></div>
+      <div class="actions"></div>`;
+    const rows = div.querySelector(".trows");
+    for (const t of d.tickets) {
+      const row = document.createElement("div");
+      row.className = "trow";
+      row.innerHTML = isSubmitted(t)
+        ? `<span class="chip submitted">已提交</span><span class="sum">${esc(t.summary)}</span><a href="${esc(t.jiraUrl || "#")}" target="_blank">${esc(t.jiraKey)}</a>`
+        : `<span class="chip draft">草稿</span><span class="sum">${esc(t.summary)}</span><span class="hint">${esc(t.assignee || "")}${t.dueDate ? " · " + esc(t.dueDate) : ""}</span>`;
+      rows.append(row);
+    }
+    const actions = div.querySelector(".actions");
+    const editBtn = document.createElement("button");
+    editBtn.className = "ghost"; editBtn.textContent = "继续编辑";
+    editBtn.onclick = () => {
+      current = { id: entry.id, draft: d };
+      $("input").value = d.meta.input;
+      showView("create");
+      renderEditor();
+      setStatus($("draftStatus"), "已载入历史草稿，可继续编辑后提交", "ok");
+    };
+    actions.append(editBtn);
+    const delBtn = document.createElement("button");
+    delBtn.className = "danger"; delBtn.textContent = "删除";
+    delBtn.onclick = async () => {
+      if (!confirm("删除这条本地记录？已上板的 Jira 票不受影响。")) return;
+      await api("DELETE", `/api/drafts/${encodeURIComponent(entry.id)}`);
+      if (current && current.id === entry.id) { current = null; renderEditor(); }
+      loadHistory();
+    };
+    actions.append(delBtn);
+    list.append(div);
+  }
+}
+
+$("cleanupBtn").onclick = async () => {
+  if (!confirm("将删除所有票都已提交的本地记录（不影响 Jira 上的票）。继续？")) return;
+  const { removed } = await api("POST", "/api/drafts/cleanup");
+  alert(`已清理 ${removed} 条记录`);
+  loadHistory();
+};
+
+// ─── tab 切换 ────────────────────────────────────────────────────────────────
+
+function showView(name) {
+  $("viewCreate").hidden = name !== "create";
+  $("viewHistory").hidden = name !== "history";
+  $("tabCreate").className = name === "create" ? "active" : "";
+  $("tabHistory").className = name === "history" ? "active" : "";
+  if (name === "history") loadHistory().catch((e) => { $("historyList").innerHTML = `<div class="empty">${esc(e.message)}</div>`; });
+}
+$("tabCreate").onclick = () => showView("create");
+$("tabHistory").onclick = () => showView("history");
+
+loadMeta().catch((e) => { $("proj").textContent = e.message; });
+</script>
+</body>
+</html>

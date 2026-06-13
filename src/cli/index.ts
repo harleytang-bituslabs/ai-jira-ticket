@@ -7,11 +7,11 @@
 
 import { Command } from "commander";
 import dotenv from "dotenv";
-import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { loadConfig } from "../core/config.js";
 import { draftTickets } from "../core/draft.js";
+import { writeDraftFiles } from "../core/draft-files.js";
 import { renderDraftMarkdown } from "../core/render.js";
 import type { DraftFile } from "../core/schema.js";
 import { readProjectMeta } from "../core/spec-cache.js";
@@ -49,13 +49,7 @@ program
     const config = await loadConfig(program.opts().config);
     const input = inputWords.join(" ");
     const draft = await draftTickets(input, { config, onProgress: (m) => console.log(m) });
-
-    await mkdir(config.draftsDir, { recursive: true });
-    const base = draftBaseName(draft);
-    const jsonPath = join(config.draftsDir, `${base}.json`);
-    const mdPath = join(config.draftsDir, `${base}.md`);
-    await atomicWrite(jsonPath, JSON.stringify(draft, null, 2) + "\n");
-    await atomicWrite(mdPath, renderDraftMarkdown(draft));
+    const { jsonPath, mdPath } = await writeDraftFiles(draft, config.draftsDir);
 
     console.log(`\n生成 ${draft.tickets.length} 张票:`);
     for (const t of draft.tickets) {
@@ -113,23 +107,12 @@ program
 
     if (!opts.dryRun) {
       const created = result.tickets.filter((t) => t.jiraKey);
-      if (created.length === result.tickets.length && created.length > 0) {
+      if (created.length === result.tickets.length) {
         console.log(`\n完成 — ${created.length} 张票已上板:`);
         for (const t of created) console.log(`  ${t.jiraKey}  ${t.jiraUrl}`);
       }
     }
   });
-
-function draftBaseName(draft: DraftFile): string {
-  const d = new Date(draft.meta.createdAt);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(
-    d.getMinutes(),
-  )}${pad(d.getSeconds())}`;
-  const words = draft.tickets[0]?.summary.match(/[\p{L}\p{N}]+/gu) ?? [];
-  const slug = words.join("-").slice(0, 24).replace(/-+$/, "") || "draft";
-  return `${stamp}-${slug}`;
-}
 
 program.parseAsync(process.argv).catch((err: unknown) => {
   console.error(`\n✗ ${err instanceof Error ? err.message : String(err)}`);
