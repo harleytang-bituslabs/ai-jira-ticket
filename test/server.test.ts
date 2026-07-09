@@ -11,8 +11,9 @@ import { FsUserStore } from "../src/stores/user-store.js";
 import { buildApp } from "../src/server/app.js";
 import { hashPassword } from "../src/server/session.js";
 
-const ALICE = "alice@example.com";
-const BOB = "bob@example.com";
+const ALICE = "alice@example.com"; // l1
+const BOB = "bob@example.com"; // l2
+const CAROL = "carol@example.com"; // admin
 const PASSWORD = "hunter2hunter2";
 
 let app: ReturnType<typeof buildApp>;
@@ -104,6 +105,7 @@ beforeAll(async () => {
   await users.upsert({ email: ALICE, name: "Alice", level: "l1", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
   await users.upsert({ email: BOB, name: "Bob", level: "l2", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
   await users.upsert({ email: "gone@example.com", name: "Gone", level: "l1", scrypt, active: false, createdAt: "2026-07-01T00:00:00.000Z" });
+  await users.upsert({ email: CAROL, name: "Carol", level: "admin", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
 
   app = buildApp(config, { drafts, users, sessionSecret: "test-secret" });
 });
@@ -233,6 +235,65 @@ describe("draft APIs are user-scoped", () => {
     expect(tickets.find((t) => t.localId === "t2")?.jiraKey).toBeUndefined(); // 伪造 key 剥除
   });
 
+  it("L1 cannot request Epic in compose defaults (rejected before any LLM call)", async () => {
+    const agent = await login(ALICE);
+    const r = await agent.post("/api/draft").send({ input: "建个大模块", defaults: { issueType: "Epic" } });
+    expect(r.status).toBe(403);
+    expect(r.body.error).toContain("Epic");
+  });
+
+  it("L1 saves are policy-corrected: Epic rejected, assignee forced to self", async () => {
+    const draft = mkDraft([ticket("t1", { assignee: BOB })], "2026-07-06T08:00:00.000Z");
+    const saved = await drafts.write(ALICE, draft);
+    const agent = await login(ALICE);
+
+    // 指派他人 → 被强制改回本人
+    const r1 = await agent.put(`/api/drafts/${saved.id}`).send({ draft });
+    expect(r1.status).toBe(200);
+    expect(r1.body.draft.tickets[0].assignee).toBe(ALICE);
+
+    // 改成 Epic → 403
+    const epicDraft = structuredClone(draft);
+    epicDraft.tickets[0].issueType = "Epic";
+    const r2 = await agent.put(`/api/drafts/${saved.id}`).send({ draft: epicDraft });
+    expect(r2.status).toBe(403);
+  });
+
+  it("L2 saves keep any assignee (no forcing)", async () => {
+    const draft = mkDraft([ticket("t1", { assignee: ALICE })], "2026-07-07T08:00:00.000Z");
+    const saved = await drafts.write(BOB, draft);
+    const agent = await login(BOB);
+    const r = await agent.put(`/api/drafts/${saved.id}`).send({ draft });
+    expect(r.body.draft.tickets[0].assignee).toBe(ALICE);
+  });
+
+  it("scope=all: admin sees every owner's records; L2 gets 403", async () => {
+    await drafts.write(ALICE, mkDraft([ticket("t1")], "2026-07-08T08:00:00.000Z"));
+    await drafts.write(BOB, mkDraft([ticket("t1")], "2026-07-08T09:00:00.000Z"));
+
+    const carol = await login(CAROL);
+    const all = await carol.get("/api/drafts?scope=all");
+    expect(all.status).toBe(200);
+    const owners = new Set(all.body.drafts.map((d: { owner: string }) => d.owner));
+    expect(owners.has(ALICE)).toBe(true);
+    expect(owners.has(BOB)).toBe(true);
+
+    const bob = await login(BOB);
+    expect((await bob.get("/api/drafts?scope=all")).status).toBe(403);
+  });
+
+  it("admin can delete another user's record via ?owner=; L2 cannot", async () => {
+    const target = await drafts.write(ALICE, mkDraft([ticket("t1")], "2026-07-09T08:00:00.000Z"));
+
+    const bob = await login(BOB);
+    expect((await bob.delete(`/api/drafts/${target.id}?owner=${ALICE}`)).status).toBe(403);
+    expect((await drafts.list(ALICE)).some((e) => e.id === target.id)).toBe(true);
+
+    const carol = await login(CAROL);
+    expect((await carol.delete(`/api/drafts/${target.id}?owner=${ALICE}`)).status).toBe(200);
+    expect((await drafts.list(ALICE)).some((e) => e.id === target.id)).toBe(false);
+  });
+
   it("cleanup only touches the caller's fully-submitted records", async () => {
     const doneA = await drafts.write(ALICE, mkDraft([ticket("t1", { jiraKey: "AIP-101", jiraUrl: "https://x/AIP-101" })], "2026-07-04T08:00:00.000Z"));
     const doneB = await drafts.write(BOB, mkDraft([ticket("t1", { jiraKey: "AIP-102", jiraUrl: "https://x/AIP-102" })], "2026-07-05T08:00:00.000Z"));
@@ -242,5 +303,67 @@ describe("draft APIs are user-scoped", () => {
 
     expect((await drafts.list(ALICE)).some((e) => e.id === doneA.id)).toBe(false);
     expect((await drafts.list(BOB)).some((e) => e.id === doneB.id)).toBe(true); // Bob 的没被动
+  });
+});
+
+describe("admin user management", () => {
+  it("is admin-gated: anonymous → 401, L2 → 403", async () => {
+    expect((await request(app).get("/api/admin/users")).status).toBe(401);
+    const bob = await login(BOB);
+    expect((await bob.get("/api/admin/users")).status).toBe(403);
+  });
+
+  it("lists users without leaking password hashes", async () => {
+    const carol = await login(CAROL);
+    const r = await carol.get("/api/admin/users");
+    expect(r.status).toBe(200);
+    expect(r.body.users.length).toBeGreaterThanOrEqual(4);
+    for (const u of r.body.users) {
+      expect(u.scrypt).toBeUndefined();
+      expect(u.level).toMatch(/^(l1|l2|admin)$/);
+    }
+  });
+
+  it("creates a user who can then log in; duplicates → 409; weak input → 400", async () => {
+    const carol = await login(CAROL);
+    const created = await carol.post("/api/admin/users").send({
+      email: "dave@example.com",
+      name: "Dave",
+      password: "davedavedave",
+      level: "l2",
+    });
+    expect(created.status).toBe(201);
+    await login("dave@example.com", "davedavedave");
+
+    expect((await carol.post("/api/admin/users").send({ email: "dave@example.com", name: "D", password: "davedavedave", level: "l1" })).status).toBe(409);
+    expect((await carol.post("/api/admin/users").send({ email: "eve@example.com", name: "Eve", password: "short", level: "l1" })).status).toBe(400);
+    expect((await carol.post("/api/admin/users").send({ email: "eve@example.com", name: "Eve", password: "longenough1", level: "boss" })).status).toBe(400);
+  });
+
+  it("PATCH updates level / active / password; deactivation blocks login at once", async () => {
+    const carol = await login(CAROL);
+    await carol.post("/api/admin/users").send({ email: "frank@example.com", name: "Frank", password: "frankfrank1", level: "l1" });
+
+    const up = await carol.patch("/api/admin/users/frank@example.com").send({ level: "l2", password: "newpassword9" });
+    expect(up.status).toBe(200);
+    expect(up.body.user.level).toBe("l2");
+
+    expect((await request(app).post("/api/login").send({ email: "frank@example.com", password: "frankfrank1" })).status).toBe(401);
+    const frank = await login("frank@example.com", "newpassword9");
+
+    await carol.patch("/api/admin/users/frank@example.com").send({ active: false });
+    expect((await frank.get("/api/me")).status).toBe(401); // 已有会话立刻失效
+    expect((await request(app).post("/api/login").send({ email: "frank@example.com", password: "newpassword9" })).status).toBe(401);
+  });
+
+  it("refuses to demote or deactivate the last active admin", async () => {
+    const carol = await login(CAROL);
+    expect((await carol.patch(`/api/admin/users/${CAROL}`).send({ level: "l1" })).status).toBe(400);
+    expect((await carol.patch(`/api/admin/users/${CAROL}`).send({ active: false })).status).toBe(400);
+  });
+
+  it("PATCH unknown user → 404", async () => {
+    const carol = await login(CAROL);
+    expect((await carol.patch("/api/admin/users/nobody@example.com").send({ level: "l1" })).status).toBe(404);
   });
 });

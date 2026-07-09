@@ -12,6 +12,7 @@ import { DraftFileSchema, type DraftFile } from "../../core/schema.js";
 import { readProjectMeta } from "../../core/spec-cache.js";
 import { submitDraft } from "../../core/submit.js";
 import type { DraftStore } from "../../stores/draft-store.js";
+import { HttpError } from "../middlewares/error.js";
 import {
   applyComposeDefaults,
   buildFieldDirectives,
@@ -19,6 +20,7 @@ import {
   parseComposeDefaults,
   str,
 } from "../services/drafts.js";
+import { enforcePolicy, jiraIdentity } from "../services/policy.js";
 
 export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router {
   const router = Router();
@@ -34,7 +36,13 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
       if (!Number.isInteger(n) || n < 1 || n > 20) throw new Error("splitCount 须为 1-20 的整数");
       splitCount = n;
     }
+    const user = req.user!;
     const defaults = parseComposeDefaults((body.defaults ?? {}) as Record<string, unknown>);
+    // L1 的表单值在进入 AI 之前就矫正:类型不许 Epic,指派锁定本人(生成的内容才对得上人)
+    if (user.level === "l1") {
+      if (defaults.issueType === "Epic") throw new HttpError(403, "低级账号不能创建 Epic 类型的票");
+      defaults.assignee = jiraIdentity(user);
+    }
     const fieldDirectives = await buildFieldDirectives(config, defaults);
 
     const draft = await draftTickets(input, {
@@ -43,12 +51,19 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
       ...(fieldDirectives ? { fieldDirectives } : {}),
     });
     applyComposeDefaults(draft, defaults);
+    enforcePolicy(user, draft); // 兜底:AI 产物同样不许越权
 
-    const saved = await store.write(req.user!.email, draft);
+    const saved = await store.write(user.email, draft);
     res.json({ id: saved.id, draft });
   });
 
+  /** scope=all(仅 admin)返回全员记录,带 owner 标签供所有者列/筛选。 */
   router.get("/drafts", async (req, res) => {
+    if (req.query.scope === "all") {
+      if (req.user!.level !== "admin") throw new HttpError(403, "需要管理员权限");
+      res.json({ drafts: await store.listAll() });
+      return;
+    }
     res.json({ drafts: await store.list(req.user!.email) });
   });
 
@@ -67,6 +82,7 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
     const incoming = DraftFileSchema.parse((req.body as { draft?: unknown }).draft);
     const disk = await store.read(owner, req.params.id);
     const merged = mergeDraftEdits(disk, incoming);
+    enforcePolicy(req.user!, merged);
     const saved = await store.write(owner, merged);
     res.json({ id: saved.id, draft: merged });
   });
@@ -75,6 +91,7 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
     const owner = req.user!.email;
     const id = req.params.id;
     const draft = await store.read(owner, id);
+    enforcePolicy(req.user!, draft); // 手改存储绕过 PUT 的兜底
     const meta = await readProjectMeta(config.cacheDir);
     let result: DraftFile;
     try {
@@ -94,8 +111,12 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
     res.json({ id, draft: result });
   });
 
+  /** admin 可带 ?owner=<email> 删除他人记录(全员历史的管理职能);其他人只能删自己的。 */
   router.delete("/drafts/:id", async (req, res) => {
-    await store.delete(req.user!.email, req.params.id);
+    const self = req.user!.email;
+    const requested = typeof req.query.owner === "string" && req.query.owner ? req.query.owner.toLowerCase() : self;
+    if (requested !== self && req.user!.level !== "admin") throw new HttpError(403, "只能删除自己的记录");
+    await store.delete(requested, req.params.id);
     res.json({ ok: true });
   });
 

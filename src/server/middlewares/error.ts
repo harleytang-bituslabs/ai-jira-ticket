@@ -8,6 +8,16 @@
 
 import type { NextFunction, Request, Response } from "express";
 
+/** 业务代码里需要非 400 状态码时抛这个(errorHandler 会读 status)。 */
+export class HttpError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 export function notFound(_req: Request, res: Response): void {
   res.status(404).json({ error: "not found" });
 }

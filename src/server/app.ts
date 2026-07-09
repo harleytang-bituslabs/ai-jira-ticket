@@ -14,9 +14,10 @@ import { fileURLToPath } from "node:url";
 import type { ResolvedConfig } from "../core/config.js";
 import type { DraftStore } from "../stores/draft-store.js";
 import type { UserStore } from "../stores/user-store.js";
-import { attachAuth, requireAuth } from "./middlewares/auth.js";
+import { attachAuth, requireAdmin, requireAuth } from "./middlewares/auth.js";
 import { errorHandler, notFound } from "./middlewares/error.js";
 import { requestLog } from "./middlewares/log.js";
+import { adminRoutes } from "./routes/admin.routes.js";
 import { authRoutes } from "./routes/auth.routes.js";
 import { draftsRoutes } from "./routes/drafts.routes.js";
 import { metaRoutes } from "./routes/meta.routes.js";
@@ -46,6 +47,7 @@ export function buildApp(config: ResolvedConfig, deps: AppDeps): express.Express
   });
 
   app.use("/api", authRoutes(deps.users, deps.sessionSecret));
+  app.use("/api/admin", requireAdmin, adminRoutes(deps.users));
   app.use("/api", requireAuth, metaRoutes(config));
   app.use("/api", requireAuth, draftsRoutes(config, deps.drafts));
 
