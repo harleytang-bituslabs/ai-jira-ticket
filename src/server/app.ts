@@ -10,6 +10,7 @@
  */
 
 import express from "express";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedConfig } from "../core/config.js";
 import type { DraftStore } from "../stores/draft-store.js";
@@ -22,7 +23,8 @@ import { authRoutes } from "./routes/auth.routes.js";
 import { draftsRoutes } from "./routes/drafts.routes.js";
 import { metaRoutes } from "./routes/meta.routes.js";
 
-const HTML_PATH = fileURLToPath(new URL("./index.html", import.meta.url));
+/** Vite build output (npm run build:web). Assets are hashed, index.html must not be cached. */
+const WEB_DIST = fileURLToPath(new URL("../../web/dist", import.meta.url));
 
 export interface AppDeps {
   drafts: DraftStore;
@@ -41,9 +43,12 @@ export function buildApp(config: ResolvedConfig, deps: AppDeps): express.Express
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true });
   });
+  app.use(express.static(WEB_DIST, { index: false }));
   app.get("/", (_req, res) => {
     res.set("Cache-Control", "no-store");
-    res.sendFile(HTML_PATH);
+    res.sendFile(join(WEB_DIST, "index.html"), (err) => {
+      if (err && !res.headersSent) res.status(503).type("text/plain").send("前端未构建:先运行 npm run build:web");
+    });
   });
 
   app.use("/api", authRoutes(deps.users, deps.sessionSecret));

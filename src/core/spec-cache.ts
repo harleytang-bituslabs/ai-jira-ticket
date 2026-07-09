@@ -102,3 +102,31 @@ export async function readIssuesCache(dir: string): Promise<IssuesCache> {
     throw new Error(`No issues cache at ${dir}/${ISSUES_FILE} — run \`npm run fetch-issues\` first`);
   }
 }
+
+// ─── Site user roster (users.json, written by fetch-users / /api/refresh) ───
+
+const USERS_FILE = "users.json";
+
+export interface UsersCache {
+  fetchedAt: string;
+  total: number;
+  users: Array<{ accountId: string; displayName: string; email: string | null }>;
+}
+
+export async function writeUsersCache(dir: string, cache: UsersCache): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  await atomicWrite(join(dir, USERS_FILE), JSON.stringify(cache, null, 2) + "\n");
+}
+
+/** Assignee roster for the web form: cached Jira users with a visible email. Empty when no cache yet. */
+export async function readRoster(dir: string): Promise<Array<{ name: string; email: string }>> {
+  try {
+    const doc = JSON.parse(await readFile(join(dir, USERS_FILE), "utf-8")) as UsersCache;
+    return doc.users
+      .filter((u): u is { accountId: string; displayName: string; email: string } => Boolean(u.email))
+      .map((u) => ({ name: u.displayName, email: u.email }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}

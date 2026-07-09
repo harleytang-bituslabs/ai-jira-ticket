@@ -1,0 +1,90 @@
+/**
+ * 前端侧的 API 数据形状。与服务端 zod schema（src/core/schema.ts 等）保持一致，
+ * 手工镜像而不跨包 import——避免把服务端依赖拖进浏览器构建。
+ */
+
+export type UserLevel = "l1" | "l2" | "admin";
+
+export interface User {
+  email: string;
+  name: string;
+  level: UserLevel;
+  /** 在 Jira 上的账号邮箱（登录邮箱不同时由管理员配置），指派/筛选都用它。 */
+  jiraEmail: string;
+}
+
+export interface Ticket {
+  localId: string;
+  summary: string;
+  description: string;
+  issueType: string;
+  priority: string | null;
+  labels: string[];
+  parent: string | null;
+  assignee: string | null;
+  dueDate: string | null;
+  estimate: string | null;
+  jiraKey?: string;
+  jiraUrl?: string;
+}
+
+export interface DraftLink {
+  from: string;
+  to: string;
+  type: string;
+  created: boolean;
+}
+
+export interface DraftFile {
+  meta: {
+    version: 1;
+    createdAt: string;
+    input: string;
+    projectKey: string;
+    specSyncedAt: string | null;
+    specVersions: Array<number | null>;
+    model: string;
+  };
+  tickets: Ticket[];
+  links: DraftLink[];
+  notes: string | null;
+}
+
+/** 编辑器/历史里的一条记录（历史即草稿档案）。 */
+export interface DraftEntry {
+  id: string;
+  owner: string;
+  draft: DraftFile;
+}
+
+export interface IssueRef {
+  key: string;
+  summary: string;
+  status: string;
+  /** Story/Task 所属 Epic 的 key——Sub-task 父级二级联动用。 */
+  parent: string | null;
+}
+
+export interface RosterMember {
+  name: string;
+  email: string;
+}
+
+export interface Meta {
+  projectKey: string;
+  issueTypes: Array<{ name: string; subtask: boolean }>;
+  priorities: string[];
+  epics: IssueRef[];
+  standardParents: IssueRef[];
+  roster: RosterMember[];
+  issuesFetchedAt: string;
+}
+
+export interface AdminUser {
+  email: string;
+  name: string;
+  jiraEmail: string | null;
+  level: UserLevel;
+  active: boolean;
+  createdAt: string;
+}

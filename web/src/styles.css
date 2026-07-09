@@ -1,0 +1,131 @@
+/* 等价迁移自 1.x 单文件 UI 的样式，追加 2.0 的登录页/弹窗/筛选栏/管理表格。 */
+
+:root { --line:#d9dce3; --muted:#6b7280; --accent:#1d4ed8; --bg:#f5f6f8; --green:#047857; --green-bg:#ecfdf5; }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:#16181d; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+header { display:flex; align-items:center; gap:16px; width:80%; margin:0 auto; padding:18px 0 0; }
+header h1 { font-size:20px; margin:0; white-space:nowrap; }
+header .sub { color:var(--muted); font-size:13px; flex:1; }
+nav { white-space:nowrap; }
+nav button { background:none; border:0; font:inherit; font-size:14px; padding:8px 2px; margin-left:16px; cursor:pointer; color:var(--muted); border-bottom:2px solid transparent; }
+nav button.active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+.userbox { display:flex; align-items:center; gap:10px; margin-left:20px; font-size:13px; color:var(--muted); white-space:nowrap; }
+.userbox .who { font-weight:600; color:#16181d; }
+.userbox button { background:none; border:0; font:inherit; font-size:13px; color:var(--muted); cursor:pointer; padding:2px 0; text-decoration:underline; text-underline-offset:3px; }
+.userbox button:hover { color:var(--accent); }
+
+main { width:80%; margin:0 auto; padding:8px 0 56px; }
+.card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px; margin-top:14px; }
+label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; }
+.card > label:first-child { margin-top:0; }
+textarea, input, select { font:inherit; font-size:14px; padding:8px 9px; border:1px solid var(--line); border-radius:7px; background:#fff; }
+textarea { width:100%; resize:vertical; }
+input.f-summary { width:100%; }
+button.primary, button.ghost, button.danger { font:inherit; font-size:14px; padding:9px 16px; border-radius:8px; cursor:pointer; border:1px solid transparent; }
+button.primary { color:#fff; background:var(--accent); font-weight:600; }
+button.ghost { background:#fff; border-color:var(--line); }
+button.danger { background:#fff; border-color:var(--line); color:#b91c1c; }
+button:disabled { opacity:.5; cursor:wait; }
+.status { font-size:13px; color:var(--muted); white-space:pre-wrap; }
+.status.error { color:#b91c1c; }
+.status.ok { color:var(--green); }
+.hint { font-size:12px; color:var(--muted); margin-top:6px; }
+.invalid { border-color:#dc2626 !important; background:#fef2f2 !important; }
+
+.composeFoot { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-top:14px; flex-wrap:wrap; }
+.composeFoot .left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.composeFoot .right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+.seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+.seg button { border:0; border-right:1px solid var(--line); background:#fff; padding:0 14px; height:34px; font:inherit; font-size:13px; cursor:pointer; color:var(--muted); }
+.seg button:last-child { border-right:0; }
+/* 选中态不改字重（粗体会撑宽按钮导致组宽度抖动），只用颜色区分 */
+.seg button.active { background:var(--accent); color:#fff; }
+/* 值级配色：未选中与普通按钮一致（白底灰字），选中上对应颜色白字（--c 由组件注入） */
+.seg button[data-c].active { background:var(--c); color:#fff; }
+.seg.disabled { opacity:.45; pointer-events:none; }
+.seg.lone button { cursor:default; }
+.splitN { width:80px; }
+
+.chip { display:inline-block; font-size:12px; padding:2px 9px; border-radius:99px; vertical-align:middle; white-space:nowrap; }
+.chip.draft { background:#eef0f3; color:#374151; }
+.chip.submitted { background:var(--green-bg); color:var(--green); }
+.chip.owner { background:#eef2ff; color:#3730a3; }
+
+.ticket { border:1px solid var(--line); border-radius:10px; padding:14px; margin-top:12px; background:#fff; }
+.ticket.done { background:#fbfdfc; }
+/* 顶栏整体可换行：所有元素自然流动，放不下就整组换行，任何元素都不会被裁出容器 */
+.ticket .head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.ticket .head .lid { font-weight:700; font-size:13px; color:var(--muted); }
+.ticket .head select, .ticket .head input[type=date] { width:auto; min-width:96px; font-size:13px; padding:6px 8px; }
+/* 父级框弹性伸缩：只设下限、上不封顶，吸收行内全部富余宽度；
+   窗口变窄时它先收缩，压到下限后才允许换行（按钮可换行但绝不溢出隐藏） */
+.ticket .head .parent { flex:1 1 auto; min-width:56px; }
+.ticket .head .del { white-space:nowrap; }
+.ticket .ro-summary { font-weight:600; }
+.ticket .ro-meta { font-size:13px; color:var(--muted); margin-top:6px; }
+.ticket details { margin-top:8px; }
+.ticket details summary { cursor:pointer; font-size:13px; color:var(--muted); }
+.ticket details pre { white-space:pre-wrap; font:13px/1.6 inherit; background:#f8f9fb; padding:10px; border-radius:8px; margin:6px 0 0; }
+.ticket .key { font-weight:700; color:var(--accent); text-decoration:none; }
+
+.linkchip { display:inline-flex; gap:6px; align-items:center; font-size:13px; background:#eef2ff; border:1px solid #c7d2fe; border-radius:8px; padding:4px 10px; margin:6px 8px 0 0; }
+.linkchip button { border:0; background:none; cursor:pointer; color:#6b7280; padding:0; font-size:14px; }
+
+.frow { display:flex; gap:18px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-start; }
+.frow .fgroup { flex:0 1 auto; }
+.frow .fgroup.grow { flex:1; min-width:280px; }
+.fgroup label { margin:0 0 5px; }
+.parentPick { display:flex; gap:8px; }
+.parentPick select { flex:1; min-width:0; }
+.dueDate { width:160px; height:36px; font-size:13px; }
+.assigneePick { height:36px; min-width:220px; }
+
+.hist { border:1px solid var(--line); border-radius:10px; background:#fff; padding:14px 16px; margin-top:12px; }
+.hist .top { display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; }
+.hist .when { font-size:13px; color:var(--muted); white-space:nowrap; }
+.hist .input-excerpt { flex:1; min-width:200px; font-size:14px; }
+.hist .trow { display:flex; gap:10px; align-items:center; font-size:13px; margin-top:8px; }
+.hist .trow .sum { flex:1; min-width:160px; }
+.hist .trow a { color:var(--accent); font-weight:600; text-decoration:none; }
+.hist .actions { margin-top:10px; display:flex; gap:8px; }
+.toolbar { display:flex; align-items:center; gap:12px; margin-top:14px; flex-wrap:wrap; }
+.toolbar .status { flex:1; }
+.empty { color:var(--muted); text-align:center; padding:36px 0; }
+
+/* 历史筛选栏 */
+.filterbar { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin-top:14px; padding:12px 14px; background:#fff; border:1px solid var(--line); border-radius:10px; }
+.filterbar .fgroup label { margin:0 0 4px; font-size:12px; }
+.filterbar select, .filterbar input { font-size:13px; padding:6px 8px; }
+.filterbar .clear { margin-left:auto; }
+
+/* 登录页 */
+.loginWrap { min-height:100vh; display:flex; align-items:center; justify-content:center; }
+.loginCard { width:360px; background:#fff; border:1px solid var(--line); border-radius:12px; padding:28px; }
+.loginCard h1 { font-size:20px; margin:0 0 4px; }
+.loginCard .sub { color:var(--muted); font-size:13px; margin-bottom:14px; }
+.loginCard input { width:100%; margin-top:4px; }
+.loginCard button.primary { width:100%; margin-top:18px; }
+.loginCard .status { margin-top:10px; min-height:18px; }
+
+/* 弹窗（提交确认 / 修改密码） */
+.overlay { position:fixed; inset:0; background:rgba(15,18,25,.45); display:flex; align-items:center; justify-content:center; z-index:50; }
+.modal { width:min(620px, 92vw); max-height:84vh; overflow:auto; background:#fff; border-radius:12px; padding:22px 24px; }
+.modal h2 { font-size:17px; margin:0 0 6px; }
+.modal .sub { color:var(--muted); font-size:13px; margin-bottom:12px; }
+.modal .mrow { display:flex; gap:10px; align-items:baseline; font-size:13px; padding:7px 0; border-bottom:1px solid #f0f1f4; }
+.modal .mrow .sum { flex:1; min-width:160px; font-weight:600; }
+.modal .mrow .meta { color:var(--muted); white-space:nowrap; }
+.modal .mfoot { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
+.modal input { width:100%; }
+
+/* 管理面板 */
+.utable { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+.utable th, .utable td { text-align:left; padding:9px 10px; border-bottom:1px solid #f0f1f4; }
+.utable th { color:var(--muted); font-weight:600; font-size:12px; }
+.utable select { font-size:13px; padding:5px 7px; }
+.utable .off { color:#b91c1c; }
+.utable .rowBtns { display:flex; gap:8px; white-space:nowrap; }
+.utable .rowBtns button { padding:5px 10px; font-size:13px; }
+.addUser { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+.addUser .fgroup input, .addUser .fgroup select { min-width:170px; }
