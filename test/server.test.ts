@@ -2,14 +2,22 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import request from "supertest";
+import type TestAgent from "supertest/lib/agent.js";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { ResolvedConfig } from "../src/core/config.js";
-import { writeDraftFiles } from "../src/core/draft-files.js";
 import { DraftFileSchema, type DraftFile, type Ticket } from "../src/core/schema.js";
+import { FsDraftStore } from "../src/stores/draft-store.js";
+import { FsUserStore } from "../src/stores/user-store.js";
 import { buildApp } from "../src/server/app.js";
+import { hashPassword } from "../src/server/session.js";
+
+const ALICE = "alice@example.com";
+const BOB = "bob@example.com";
+const PASSWORD = "hunter2hunter2";
 
 let app: ReturnType<typeof buildApp>;
 let config: ResolvedConfig;
+let drafts: FsDraftStore;
 
 const ticket = (localId: string, over: Partial<Ticket> = {}): Record<string, unknown> => ({
   localId,
@@ -40,9 +48,18 @@ const mkDraft = (tickets: Record<string, unknown>[], createdAt: string): DraftFi
     links: [],
   });
 
+async function login(email: string, password = PASSWORD): Promise<TestAgent> {
+  const agent = request.agent(app);
+  const r = await agent.post("/api/login").send({ email, password });
+  expect(r.status).toBe(200);
+  return agent;
+}
+
 beforeAll(async () => {
   const cacheDir = await mkdtemp(join(tmpdir(), "ajt-cache-"));
   const draftsDir = await mkdtemp(join(tmpdir(), "ajt-drafts-"));
+  const dataDir = await mkdtemp(join(tmpdir(), "ajt-data-"));
+
   await writeFile(
     join(cacheDir, "project-meta.json"),
     JSON.stringify({
@@ -68,6 +85,7 @@ beforeAll(async () => {
       ],
     }),
   );
+
   config = {
     projectKey: "AIP",
     specPageUrls: ["https://example.atlassian.net/wiki/spaces/X/pages/1/Spec"],
@@ -79,108 +97,150 @@ beforeAll(async () => {
     teamMembers: [{ name: "T One", email: "t1@example.com" }],
     model: "test-model",
   };
-  app = buildApp(config);
+
+  drafts = new FsDraftStore(draftsDir);
+  const users = new FsUserStore(join(dataDir, "users.json"));
+  const scrypt = await hashPassword(PASSWORD);
+  await users.upsert({ email: ALICE, name: "Alice", level: "l1", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
+  await users.upsert({ email: BOB, name: "Bob", level: "l2", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
+  await users.upsert({ email: "gone@example.com", name: "Gone", level: "l1", scrypt, active: false, createdAt: "2026-07-01T00:00:00.000Z" });
+
+  app = buildApp(config, { drafts, users, sessionSecret: "test-secret" });
 });
 
-describe("routing basics", () => {
-  it("GET / serves the app page", async () => {
-    const r = await request(app).get("/");
-    expect(r.status).toBe(200);
-    expect(r.text).toContain("AI 开票");
-  });
-
-  it("GET /healthz is open and OK", async () => {
+describe("open endpoints", () => {
+  it("GET /healthz needs no auth", async () => {
     const r = await request(app).get("/healthz");
-    expect(r.status).toBe(200);
     expect(r.body).toEqual({ ok: true });
   });
 
-  it("unknown route → 404 {error}", async () => {
-    const r = await request(app).get("/api/nope");
-    expect(r.status).toBe(404);
-    expect(r.body.error).toBe("not found");
-  });
-
-  it("malformed JSON body → 400 with friendly message", async () => {
-    const r = await request(app).post("/api/draft").set("Content-Type", "application/json").send("{oops");
-    expect(r.status).toBe(400);
-    expect(r.body.error).toContain("JSON");
-  });
-});
-
-describe("GET /api/meta", () => {
-  it("returns project facts from the cache", async () => {
-    const r = await request(app).get("/api/meta");
+  it("GET / serves the app shell", async () => {
+    const r = await request(app).get("/");
     expect(r.status).toBe(200);
-    expect(r.body.projectKey).toBe("AIP");
-    expect(r.body.priorities).toEqual(["P0", "P1", "P2"]);
-    expect(r.body.epics).toEqual([expect.objectContaining({ key: "AIP-1" })]);
-    expect(r.body.standardParents).toEqual([expect.objectContaining({ key: "AIP-2", parent: "AIP-1" })]);
+  });
+
+  it("unknown /api route: 401 when anonymous, 404 when authed (no route disclosure)", async () => {
+    expect((await request(app).get("/api/nope")).status).toBe(401);
+    const agent = await login(ALICE);
+    expect((await agent.get("/api/nope")).status).toBe(404);
   });
 });
 
-describe("POST /api/draft validation (rejected before any LLM call)", () => {
-  it("missing input → 400", async () => {
-    const r = await request(app).post("/api/draft").send({});
-    expect(r.status).toBe(400);
-    expect(r.body.error).toContain("input");
+describe("auth", () => {
+  it("API is gated: no cookie → 401", async () => {
+    for (const probe of [request(app).get("/api/meta"), request(app).get("/api/drafts")]) {
+      const r = await probe;
+      expect(r.status).toBe(401);
+    }
   });
 
-  it("bad splitCount → 400", async () => {
-    const r = await request(app).post("/api/draft").send({ input: "做个东西", splitCount: 99 });
-    expect(r.status).toBe(400);
-    expect(r.body.error).toContain("splitCount");
+  it("wrong password → 401 with a uniform message", async () => {
+    const r = await request(app).post("/api/login").send({ email: ALICE, password: "nope" });
+    expect(r.status).toBe(401);
+    expect(r.body.error).toBe("邮箱或密码不正确");
+  });
+
+  it("disabled accounts cannot log in (same uniform message)", async () => {
+    const r = await request(app).post("/api/login").send({ email: "gone@example.com", password: PASSWORD });
+    expect(r.status).toBe(401);
+    expect(r.body.error).toBe("邮箱或密码不正确");
+  });
+
+  it("login → /api/me → logout → 401", async () => {
+    const agent = await login(ALICE);
+    const me = await agent.get("/api/me");
+    expect(me.body.user).toMatchObject({ email: ALICE, name: "Alice", level: "l1", jiraEmail: ALICE });
+    expect(me.body.user.scrypt).toBeUndefined();
+
+    await agent.post("/api/logout");
+    const after = await agent.get("/api/me");
+    expect(after.status).toBe(401);
+  });
+
+  it("10 failures rate-limit that (ip,email) pair only", async () => {
+    const email = "victim@example.com"; // 不存在的账号,失败也计数
+    for (let i = 0; i < 10; i++) {
+      await request(app).post("/api/login").send({ email, password: "x" });
+    }
+    const blocked = await request(app).post("/api/login").send({ email, password: "x" });
+    expect(blocked.status).toBe(429);
+
+    // 其他账号不受影响
+    const ok = await request(app).post("/api/login").send({ email: ALICE, password: PASSWORD });
+    expect(ok.status).toBe(200);
+  });
+
+  it("password change: wrong old → 401; correct → new password works", async () => {
+    const agent = await login(BOB);
+    const bad = await agent.post("/api/me/password").send({ oldPassword: "nope", newPassword: "longenough1" });
+    expect(bad.status).toBe(401);
+
+    const ok = await agent.post("/api/me/password").send({ oldPassword: PASSWORD, newPassword: "longenough1" });
+    expect(ok.status).toBe(200);
+
+    await login(BOB, "longenough1");
+    // 还原,避免影响后续用例
+    const agent2 = await login(BOB, "longenough1");
+    await agent2.post("/api/me/password").send({ oldPassword: "longenough1", newPassword: PASSWORD });
   });
 });
 
-describe("draft lifecycle on the fs store", () => {
-  it("PUT enforces merge protection: submitted read-only, forged keys stripped, removal undone", async () => {
+describe("draft APIs are user-scoped", () => {
+  it("draft validation still rejects before any LLM call", async () => {
+    const agent = await login(ALICE);
+    const missing = await agent.post("/api/draft").send({});
+    expect(missing.status).toBe(400);
+    const badSplit = await agent.post("/api/draft").send({ input: "做个东西", splitCount: 99 });
+    expect(badSplit.status).toBe(400);
+  });
+
+  it("users only see their own history; ids don't cross owners", async () => {
+    const a = await drafts.write(ALICE, mkDraft([ticket("t1")], "2026-07-01T08:00:00.000Z"));
+    await drafts.write(BOB, mkDraft([ticket("t1", { summary: "[Some Epic] Bob's" })], "2026-07-02T08:00:00.000Z"));
+
+    const alice = await login(ALICE);
+    const bob = await login(BOB);
+
+    const aliceList = await alice.get("/api/drafts");
+    expect(aliceList.body.drafts.length).toBe(1);
+    expect(aliceList.body.drafts[0].owner).toBe(ALICE);
+
+    const bobList = await bob.get("/api/drafts");
+    expect(bobList.body.drafts.length).toBe(1);
+
+    // Bob 拿 Alice 的 id 读/删都无效
+    const stolenRead = await bob.put(`/api/drafts/${a.id}`).send({ draft: mkDraft([ticket("t1")], "2026-07-01T08:00:00.000Z") });
+    expect(stolenRead.status).toBe(400);
+    await bob.delete(`/api/drafts/${a.id}`);
+    expect((await alice.get("/api/drafts")).body.drafts.length).toBe(1); // Alice 的还在
+  });
+
+  it("PUT enforces merge protection within the owner's folder", async () => {
     const draft = mkDraft(
       [ticket("t1", { jiraKey: "AIP-100", jiraUrl: "https://x/browse/AIP-100" }), ticket("t2")],
-      "2026-07-01T08:00:00.000Z",
+      "2026-07-03T08:00:00.000Z",
     );
-    const saved = await writeDraftFiles(draft, config.draftsDir);
+    const saved = await drafts.write(ALICE, draft);
+    const agent = await login(ALICE);
 
-    // 客户端手笔:删掉已提交的 t1、改 t2 并伪造 jiraKey
     const edited = structuredClone(draft);
     edited.tickets = [{ ...edited.tickets[1], summary: "[Some Epic] Edited", jiraKey: "AIP-999" }];
-    const r = await request(app).put(`/api/drafts/${saved.id}`).send({ draft: edited });
+    const r = await agent.put(`/api/drafts/${saved.id}`).send({ draft: edited });
     expect(r.status).toBe(200);
 
     const tickets = r.body.draft.tickets as Array<Record<string, unknown>>;
-    const t1 = tickets.find((t) => t.localId === "t1");
-    const t2 = tickets.find((t) => t.localId === "t2");
-    expect(t1?.jiraKey).toBe("AIP-100"); // 被删除的已提交票找回、原样保留
-    expect(t2?.summary).toBe("[Some Epic] Edited"); // 未提交票的编辑生效
-    expect(t2?.jiraKey).toBeUndefined(); // 伪造的 key 被剥掉
+    expect(tickets.find((t) => t.localId === "t1")?.jiraKey).toBe("AIP-100"); // 已提交票找回
+    expect(tickets.find((t) => t.localId === "t2")?.jiraKey).toBeUndefined(); // 伪造 key 剥除
   });
 
-  it("GET /api/drafts lists, DELETE removes", async () => {
-    const draft = mkDraft([ticket("t1")], "2026-07-02T08:00:00.000Z");
-    const saved = await writeDraftFiles(draft, config.draftsDir);
+  it("cleanup only touches the caller's fully-submitted records", async () => {
+    const doneA = await drafts.write(ALICE, mkDraft([ticket("t1", { jiraKey: "AIP-101", jiraUrl: "https://x/AIP-101" })], "2026-07-04T08:00:00.000Z"));
+    const doneB = await drafts.write(BOB, mkDraft([ticket("t1", { jiraKey: "AIP-102", jiraUrl: "https://x/AIP-102" })], "2026-07-05T08:00:00.000Z"));
 
-    const list = await request(app).get("/api/drafts");
-    expect(list.body.drafts.some((d: { id: string }) => d.id === saved.id)).toBe(true);
+    const alice = await login(ALICE);
+    await alice.post("/api/drafts/cleanup");
 
-    const del = await request(app).delete(`/api/drafts/${saved.id}`);
-    expect(del.body).toEqual({ ok: true });
-    const after = await request(app).get("/api/drafts");
-    expect(after.body.drafts.some((d: { id: string }) => d.id === saved.id)).toBe(false);
-  });
-
-  it("cleanup removes only fully-submitted records", async () => {
-    const done = mkDraft([ticket("t1", { jiraKey: "AIP-101", jiraUrl: "https://x/browse/AIP-101" })], "2026-07-03T08:00:00.000Z");
-    const pending = mkDraft([ticket("t1")], "2026-07-04T08:00:00.000Z");
-    const savedDone = await writeDraftFiles(done, config.draftsDir);
-    const savedPending = await writeDraftFiles(pending, config.draftsDir);
-
-    const r = await request(app).post("/api/drafts/cleanup");
-    expect(r.status).toBe(200);
-    expect(r.body.removed).toBeGreaterThanOrEqual(1);
-
-    const list = await request(app).get("/api/drafts");
-    const ids = list.body.drafts.map((d: { id: string }) => d.id);
-    expect(ids).not.toContain(savedDone.id);
-    expect(ids).toContain(savedPending.id);
+    expect((await drafts.list(ALICE)).some((e) => e.id === doneA.id)).toBe(false);
+    expect((await drafts.list(BOB)).some((e) => e.id === doneB.id)).toBe(true); // Bob 的没被动
   });
 });

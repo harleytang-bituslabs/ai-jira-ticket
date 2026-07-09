@@ -1,16 +1,17 @@
 /**
- * Draft lifecycle routes. The drafts dir doubles as ticketing history:
- * list / edit / resubmit / delete all operate on the same records, and
- * deleting history never touches Jira.
+ * Draft lifecycle routes, scoped to the session user: every record lives in
+ * the caller's own folder (owner = 登录邮箱). The drafts store doubles as
+ * ticketing history: list / edit / resubmit / delete all operate on the same
+ * records, and deleting history never touches Jira.
  */
 
 import { Router } from "express";
 import type { ResolvedConfig } from "../../core/config.js";
 import { draftTickets } from "../../core/draft.js";
-import { deleteDraftFiles, listDrafts, readDraftFile, writeDraftFiles } from "../../core/draft-files.js";
 import { DraftFileSchema, type DraftFile } from "../../core/schema.js";
 import { readProjectMeta } from "../../core/spec-cache.js";
 import { submitDraft } from "../../core/submit.js";
+import type { DraftStore } from "../../stores/draft-store.js";
 import {
   applyComposeDefaults,
   buildFieldDirectives,
@@ -19,10 +20,10 @@ import {
   str,
 } from "../services/drafts.js";
 
-export function draftsRoutes(config: ResolvedConfig): Router {
+export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router {
   const router = Router();
 
-  /** 口语输入 + 表单字段 → AI 生成草稿并落盘。 */
+  /** 口语输入 + 表单字段 → AI 生成草稿并写入本人文件夹。 */
   router.post("/draft", async (req, res) => {
     const body = req.body as Record<string, unknown>;
     const input = str(body.input);
@@ -43,34 +44,37 @@ export function draftsRoutes(config: ResolvedConfig): Router {
     });
     applyComposeDefaults(draft, defaults);
 
-    const saved = await writeDraftFiles(draft, config.draftsDir);
+    const saved = await store.write(req.user!.email, draft);
     res.json({ id: saved.id, draft });
   });
 
-  router.get("/drafts", async (_req, res) => {
-    res.json({ drafts: await listDrafts(config.draftsDir) });
+  router.get("/drafts", async (req, res) => {
+    res.json({ drafts: await store.list(req.user!.email) });
   });
 
-  /** Deletes every local record whose tickets are all submitted. */
-  router.post("/drafts/cleanup", async (_req, res) => {
-    const entries = await listDrafts(config.draftsDir);
+  /** Deletes every record of the caller whose tickets are all submitted. */
+  router.post("/drafts/cleanup", async (req, res) => {
+    const owner = req.user!.email;
+    const entries = await store.list(owner);
     const done = entries.filter((e) => e.draft.tickets.every((t) => t.jiraKey));
-    for (const e of done) await deleteDraftFiles(config.draftsDir, e.id);
+    for (const e of done) await store.delete(owner, e.id);
     res.json({ removed: done.length });
   });
 
   /** Save card edits (submitted tickets are server-enforced read-only). */
   router.put("/drafts/:id", async (req, res) => {
+    const owner = req.user!.email;
     const incoming = DraftFileSchema.parse((req.body as { draft?: unknown }).draft);
-    const disk = await readDraftFile(config.draftsDir, req.params.id);
+    const disk = await store.read(owner, req.params.id);
     const merged = mergeDraftEdits(disk, incoming);
-    const saved = await writeDraftFiles(merged, config.draftsDir);
+    const saved = await store.write(owner, merged);
     res.json({ id: saved.id, draft: merged });
   });
 
   router.post("/drafts/:id/submit", async (req, res) => {
+    const owner = req.user!.email;
     const id = req.params.id;
-    const draft = await readDraftFile(config.draftsDir, id);
+    const draft = await store.read(owner, id);
     const meta = await readProjectMeta(config.cacheDir);
     let result: DraftFile;
     try {
@@ -78,12 +82,12 @@ export function draftsRoutes(config: ResolvedConfig): Router {
         config,
         meta,
         persist: async (d) => {
-          await writeDraftFiles(d, config.draftsDir);
+          await store.write(owner, d);
         },
       });
     } catch (err) {
       // 提交是断点续传式的：部分进度已由 persist 落盘，连着错误一起回给前端。
-      const latest = await readDraftFile(config.draftsDir, id).catch(() => draft);
+      const latest = await store.read(owner, id).catch(() => draft);
       res.status(400).json({ error: err instanceof Error ? err.message : String(err), id, draft: latest });
       return;
     }
@@ -91,7 +95,7 @@ export function draftsRoutes(config: ResolvedConfig): Router {
   });
 
   router.delete("/drafts/:id", async (req, res) => {
-    await deleteDraftFiles(config.draftsDir, req.params.id);
+    await store.delete(req.user!.email, req.params.id);
     res.json({ ok: true });
   });
 
