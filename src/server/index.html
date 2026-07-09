@@ -114,7 +114,6 @@
     </div>
     <div class="frow">
       <div class="fgroup"><label>指派给</label><span class="seg" id="cAssignee"></span></div>
-      <div class="fgroup"><label>Reporter</label><span class="seg" id="cReporter"></span></div>
       <div class="fgroup"><label>截止日期</label><input type="date" id="cDueDate"></div>
     </div>
     <label for="input">需求描述（口语化描述要做的事即可）</label>
@@ -202,7 +201,7 @@ const FIELD_TO_CONTROL = { 父级: "parent", 优先级: "priority", 截止日期
 // ─── meta + 顶部 ─────────────────────────────────────────────────────────────
 
 // 开票前置字段的状态（seg 按钮组的选中值都在这里）
-const cState = { issueType: "Task", priority: "P2", assignee: null, reporter: null };
+const cState = { issueType: "Task", priority: "P2", assignee: null };
 
 function buildSeg(el, items, selected, onPick) {
   el.innerHTML = "";
@@ -246,12 +245,6 @@ async function loadMeta() {
   buildSeg($("cAssignee"), META.teamMembers.map((m) => ({ label: m.name, value: m.email })), cState.assignee, (v) => {
     cState.assignee = v;
   });
-  const reporters = META.reporters?.length ? META.reporters : META.teamMembers.slice(0, 1);
-  if (!reporters.some((r) => r.email === cState.reporter)) cState.reporter = reporters[0]?.email ?? null;
-  buildSeg($("cReporter"), reporters.map((m) => ({ label: m.name, value: m.email })), cState.reporter, (v) => {
-    cState.reporter = v;
-  });
-
   $("cParentEpic").onchange = () => { $("cParentEpic").classList.remove("invalid"); refreshSubParentOptions(); };
   refreshComposeParent();
   // 赋值式绑定（非 addEventListener）：loadMeta 每次「更新config」都会重跑，赋值幂等、不会叠加监听器
@@ -496,7 +489,6 @@ $("draftBtn").onclick = async () => {
     priority: cState.priority,
     parentKey: $("cParent").value || null,
     assignee: cState.assignee,
-    reporter: cState.reporter,
     dueDate: $("cDueDate").value || null,
   };
   $("draftBtn").disabled = true;

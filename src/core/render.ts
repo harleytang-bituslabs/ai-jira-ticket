@@ -69,7 +69,6 @@ export function renderDraftMarkdown(draft: DraftFile): string {
     if (t.labels.length) facts.push(`标签: ${t.labels.join(", ")}`);
     if (t.parent) facts.push(`父票: ${byId.get(t.parent)?.jiraKey ?? t.parent}`);
     if (t.assignee) facts.push(`指派: ${t.assignee}`);
-    if (t.reporter) facts.push(`Reporter: ${t.reporter}`);
     if (t.dueDate) facts.push(`截止: ${t.dueDate}`);
     if (t.estimate) facts.push(`工时估算: ${t.estimate}（仅记录，不会提交）`);
     if (t.jiraKey) facts.push(`Jira: [${t.jiraKey}](${t.jiraUrl ?? ""})`);

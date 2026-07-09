@@ -93,7 +93,7 @@ export async function draftTickets(input: string, opts: DraftOptions): Promise<D
           specVersions: spec.sources.map((s) => s.version),
           model: config.model,
         },
-        tickets: checked.data.tickets.map((t) => ({ ...t, reporter: null })),
+        tickets: checked.data.tickets,
         links: checked.data.links.map((l) => ({ ...l, created: false })),
         notes: checked.data.notes,
       };

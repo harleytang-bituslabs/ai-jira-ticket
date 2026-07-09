@@ -78,7 +78,6 @@ async function handleMeta(res: ServerResponse): Promise<void> {
       .filter((i) => (i.issueType === "Story" || i.issueType === "Task") && i.status !== "Done")
       .map(pick),
     teamMembers: config.teamMembers,
-    reporters: config.reporters,
     issuesFetchedAt: issues.fetchedAt,
   });
 }
@@ -121,7 +120,6 @@ async function handleDraft(req: IncomingMessage, res: ServerResponse): Promise<v
     priority: str(raw.priority),
     parentKey: str(raw.parentKey),
     assignee: str(raw.assignee),
-    reporter: str(raw.reporter),
     dueDate: str(raw.dueDate),
   };
   const parts: string[] = [];
@@ -155,7 +153,6 @@ async function handleDraft(req: IncomingMessage, res: ServerResponse): Promise<v
       if (defaults.parentKey) t.parent = defaults.parentKey;
     }
     if (defaults.assignee) t.assignee = defaults.assignee;
-    if (defaults.reporter) t.reporter = defaults.reporter;
     if (defaults.dueDate) t.dueDate = defaults.dueDate;
     if (defaults.priority) t.priority = t.issueType === "Sub-task" ? null : defaults.priority;
   }

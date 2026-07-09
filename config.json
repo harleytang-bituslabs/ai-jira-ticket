@@ -1,9 +1,5 @@
 {
   "projectKey": "AIP",
-  "reporters": [
-    { "name": "Jack Liao", "email": "jack.liao@bituslabs.com" },
-    { "name": "Jing Lang", "email": "jing.lang@bituslabs.com" }
-  ],
   "teamMembers": [
     { "name": "Jack Liao", "email": "jack.liao@bituslabs.com" },
     { "name": "Stella Zhou", "email": "stella.zhou@bituslabs.com" },

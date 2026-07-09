@@ -12,7 +12,6 @@ const t = (localId: string, over: Partial<Ticket> = {}): Ticket => ({
   labels: [],
   parent: null,
   assignee: null,
-  reporter: null,
   dueDate: null,
   estimate: null,
   ...over,

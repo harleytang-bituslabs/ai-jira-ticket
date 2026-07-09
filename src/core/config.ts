@@ -21,8 +21,6 @@ const ConfigSchema = z.object({
    * when this needs to scale beyond a hand-maintained list.
    */
   teamMembers: z.array(z.object({ name: z.string().min(1), email: z.string().min(1) })).default([]),
-  /** Reporter candidates for the web form (separate from the assignee roster). */
-  reporters: z.array(z.object({ name: z.string().min(1), email: z.string().min(1) })).default([]),
   specPageUrls: z
     .array(z.url())
     .min(1, "specPageUrls needs at least one Confluence page URL — edit config.json"),

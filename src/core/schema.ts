@@ -138,8 +138,6 @@ export const DraftFileSchema = z
     tickets: z
       .array(
         TicketSchema.extend({
-          /** Set by the human/UI (not the LLM); resolved to an accountId at submit. */
-          reporter: z.string().nullable().default(null),
           /** Written back by submit ⇒ re-running skips already-created tickets. */
           jiraKey: z.string().optional(),
           jiraUrl: z.string().optional(),
