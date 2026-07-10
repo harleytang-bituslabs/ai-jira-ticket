@@ -2,103 +2,117 @@
 
 AI 开票助手：输入口语化的中/英文描述，按团队保存在 Confluence 上的开票规范，生成结构化 Jira 票据草稿，人工确认后提交到 Jira kanban board。
 
-半自动两步流：`draft` 生成草稿（不碰 Jira）→ 人工查看/编辑 → `submit` 提交（可反复重跑，已创建的自动跳过）。核心逻辑在 `src/core/`，是与终端无关的库函数 —— 未来要做 HTTP API / Slack bot 全自动，外面套壳即可。
+2.0 起是**多用户 Web 服务**：邮箱+密码登录、两级职级+管理员、全员历史（admin）、提交确认防呆、草稿存 S3（每人一个文件夹）、Docker/CodeBuild 可部署。核心逻辑在 `src/core/`，与 HTTP 层解耦；CLI 保留为个人本地模式。
 
-## 安装与配置（一次性）
+## 权限模型
+
+| 能力 | 普通 (l1) | 高级 (l2) | 管理员 (admin) |
+|---|---|---|---|
+| 开票类型 | 不允许 Epic | 全部 | 全部 |
+| 指派 | 强制=本人 | 任意（全员名册） | 任意 |
+| 历史 | 仅自己 | 仅自己（含指派筛选） | **全员**（所有者列/筛选） |
+| 他人记录 | — | — | 可查看、可删除（编辑/提交仍仅限自己的草稿） |
+| 用户管理 | — | — | 建号 / 定级 / 重置密码 / 停用 |
+
+权限由服务端中间件强制（`enforcePolicy` 在生成/保存/提交三条路径统一执行），前端只做隐藏。
+
+## 环境变量
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` | ✅ | Atlassian API 凭证（Confluence + Jira 共用；兼容旧 `CONFLUENCE_*` 变量名） |
+| `ANTHROPIC_API_KEY` | ✅ | AI 起草用 |
+| `SESSION_SECRET` | 生产✅ | 会话 cookie 的 HMAC 密钥（≥32 随机字符）。不设则每次重启随机生成，所有人被登出 |
+| `AJT_ADMIN_EMAIL` / `AJT_ADMIN_PASSWORD` | 首启✅ | 用户表为空时种入第一个管理员，之后无作用 |
+| `AJT_S3_BUCKET` | | 设了走 S3 存储（草稿 `drafts/{email}/` + 用户表 `users.json`）；不设用本地 fs（开发模式）。凭证走标准 AWS 链（实例角色 / env） |
+| `AJT_HOST` / `AJT_PORT` | | 默认 `127.0.0.1:9300`；容器/对外部署设 `AJT_HOST=0.0.0.0` |
+| `AJT_COOKIE_SECURE` | | 上 HTTPS 后设 `1`（cookie 加 Secure 标记） |
+| `AJT_MODEL` | | 覆盖起草模型（默认见 `src/llm/client.ts`） |
+| `AJT_CONFIG` | | 指向另一份 config.json（默认 `./config.json`） |
+
+`config.json`（入库共享，无密钥）：`projectKey` / `specPageUrls`（Confluence 规范页，可多篇）/ `defaultPriority` / `staticFields`（必填自定义字段逃生门）/ `language`（zh / en / auto）/ `teamMembers`（指派名册的兜底静态名单，拉过 Jira 全员缓存后即被替代）。
+
+## 本地开发
 
 ```bash
 npm install
-cp .env.example .env   # 填三样: ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN / ANTHROPIC_API_KEY
-                       # (兼容老项目的 CONFLUENCE_* 变量名)
+cp .env.example .env        # 填 ATLASSIAN_* 与 ANTHROPIC_API_KEY
+npm run ajt -- sync-spec    # 同步规范 + 项目元数据到 .cache/
+npm run fetch-issues        # 看板快照（父级候选）
+npm run build:web           # 构建前端 → web/dist
+
+AJT_ADMIN_EMAIL=you@company.com AJT_ADMIN_PASSWORD=changeme8 npm run web
+# → http://127.0.0.1:9300 登录即用。前端热更新开发另起: npm run dev:web (vite, 代理 /api → :9300)
 ```
 
-编辑 `config.json`（入库共享，无密钥）:
+测试与类型：`npm test`（vitest 单测 + supertest 路由级权限矩阵）、`npm run typecheck`（服务端 + 前端双 tsc）。
 
-```jsonc
-{
-  "projectKey": "AIP",                   // 目标 Jira 项目代号
-  "specPageUrls": ["https://<site>.atlassian.net/wiki/spaces/X/pages/<id>/..."],  // 规范页面，可多篇
-  "defaultPriority": "P2",               // 提示给 AI 的默认优先级（仅 Story/Task；提交时不自动补）
-  "staticFields": {},                    // 每张票固定附加的 Jira 字段（必填自定义字段逃生门）
-  "language": "auto"                     // description 语言: zh / en / auto(跟随输入)；标题按规范恒为英文
-}
-```
+## 网页版使用
 
-然后同步一次规范:
+- **开票**：选优先级/类型/父级/指派/截止（说在话里的信息 AI 也会捕捉）→ 口语描述 → 选拆票方式（AI 自行决定 / 不拆 / 指定 N 张）→ AI 拆出可编辑卡片 → 微调 → 提交（弹窗确认每张票后才上板，先父后子，每张给链接）。Sub-task 父级两级联动（先选 Epic）。
+- **历史**：历史即草稿档案。筛选：时间起止 / 父级 / 指派 / 提交状态（admin 另有所有者筛选）。没提完的「继续编辑」断点续传；「删除」「清理已完结」只删档案，**绝不影响 Jira 上已建的票**。
+- **管理**（admin）：添加用户（邮箱=登录名、初始密码线下告知、级别、可选 Jira 邮箱）、改级别、停用（会话 30 秒内失效）、重置密码。防呆：最后一个活跃管理员不可被降级/停用。
+- **更新config** 按钮：一键重拉 Confluence 规范 + Jira 看板快照 + 全员名册。**新环境首次登录后先点一次**。
+
+## 部署（Docker / AWS CodeBuild）
 
 ```bash
-npm run ajt -- sync-spec
+# 本机验证镜像
+docker build -t ajt .
+docker run --rm -p 9300:9300 --env-file .env \
+  -e SESSION_SECRET=<random> -e AJT_S3_BUCKET=<bucket> \
+  -e AJT_ADMIN_EMAIL=you@company.com -e AJT_ADMIN_PASSWORD=<initial> ajt
 ```
 
-## 日常使用（网页版，推荐）
+多阶段构建：stage1 装全部依赖并 `vite build`，stage2 只带生产依赖 + `tsx` 直跑 TS 源码，非 root 运行，自带 `/healthz` 健康检查。
+
+CodeBuild 用根目录 `buildspec.yml`：typecheck + 测试 → `docker build` → 推 ECR（`$ECR_REPO` 环境变量指定仓库，commit 短 hash + latest 双标签）→ 产出 `imagedefinitions.json` 供 ECS 流水线。环境需勾选 Privileged。
+
+生产要点：
+
+- **S3 模式必开**（`AJT_S3_BUCKET`）——容器磁盘是易失的；fs 模式仅限本地开发
+- `.cache/` 在镜像里是空的：首启后管理员登录点一次「更新config」即可（或把三个 fetch 脚本跑进启动流程）
+- **HTTPS 前密码走明文**：域名 + ACM + ALB 是下一阶段；在那之前只在内网使用，之后设 `AJT_COOKIE_SECURE=1`
+- 单实例假设（登录限速与用户缓存在内存里）；上多实例前需要外置
+
+## CLI 版（个人本地模式，无登录/无 S3）
 
 ```bash
-npm run web    # 默认 http://127.0.0.1:9300，远程访问走 SSH 隧道: ssh -L 9300:localhost:9300 <服务器>
-```
-
-**开票页**：口语描述大活（谁干什么、什么时候要，说在话里 AI 会捕捉成预填值）→ 选拆票方式（AI 自行决定 / 不拆 / 指定 N 张）→ AI 拆出 1..N 张**可编辑卡片**——标题正文可直接改，类型 / 优先级 / 父级 / 指派 / 截止日期每卡一套下拉框（AI 的选择只是预填，人有最终决定权），批量栏支持"全部指派给某人"一键铺开。不想要的卡直接删。确认后提交，先父后子上板，每张给链接。
-
-**历史页**：每次开票一条记录，每张票显示 `草稿 / 已提交` 状态（已提交带 Jira 链接、只读）。没提完的可"继续编辑"接着提（断点续传）；"删除"和"清理已完结"只删本地 `drafts/` 档案，**绝不影响 Jira 上已建的票**。
-
-候选数据来自缓存：Epic/父级列表更新跑 `npm run fetch-issues`，规范改版跑 `npm run ajt -- sync-spec`；指派候选是 config.json 的 `teamMembers` 静态名单。
-
-## 日常使用（CLI 版，AI 自动拆票）
-
-```bash
-# 1. 说人话生成草稿（落在 drafts/，附同名 .md 预览）
 npm run ajt -- draft "Safari 登录页偶发白屏要修，顺便把前端错误上报也接上"
-
-# 2. 查看/编辑草稿 JSON（description 就是一段 markdown 文本），然后提交
-npm run ajt -- submit drafts/20260611-153000-xxx.json
+npm run ajt -- submit drafts/20260611-153000-xxx.json   # --dry-run / --yes / --force
 ```
 
-`submit` 的开关:
-
-| 参数 | 作用 |
-|---|---|
-| `--dry-run` | 只校验和展示计划、验证 description 可转 Jira 格式，不创建 |
-| `--yes` | 跳过交互确认（自动化用） |
-| `--force` | 跳过元数据预检（极少用） |
-
-所有命令支持 `--config <path>` 指向另一份 config.json（多项目共用一套工具）。
-
-## 规范更新了怎么办
-
-Confluence 上的规范页面改版后，任何人跑一次 `npm run ajt -- sync-spec` 即可。draft 时若缓存超过 30 天会提示。缓存文件（`.cache/spec.md`）的 frontmatter 记录了来源 URL、页面版本号和同步时间，可审计。
+草稿即进度日志：submit 每建成一张票就把 Jira key 写回，失败修复后重跑同一条命令，已创建的自动跳过。
 
 ## 字段支持范围
 
-- `parent` 可以填草稿内引用（t1）或**已存在的 Jira key**（如 `AIP-7` 的 Epic）——本项目 Story/Task 创建时必须挂 Epic
-- `assignee`（姓名/邮箱，submit 时自动解析成 Jira 账号）和 `dueDate`（YYYY-MM-DD）会真实提交——Sub-task 创建时这两项必填，AI 起草若留空需人工在草稿里补
-- `priority` 完全由草稿决定，提交时不自动补默认值（Sub-task / Bug 按规范不带优先级）
-- **已知限制**：Bug 在本项目创建时必填的 Severity / Source / Detected Environment / Affects Version 自定义字段暂不支持自动提交，AI 会把这些信息写进 description 并在 notes 里提醒人工补填
-
-## 中途失败怎么办
-
-submit 每建成一张票就把 Jira key 写回草稿文件。任何一步失败（最常见：项目有必填自定义字段），终端会打印 Jira 的具体报错；修复草稿（或往 `config.json` 的 `staticFields` 里补字段）后**重跑同一条命令**，已创建的票和关联自动跳过。
+- `parent` 可填草稿内引用（t1）或已存在的 Jira key——本项目 Story/Task 创建时必须挂 Epic
+- `assignee`（姓名/邮箱，提交时解析成 Jira 账号）与 `dueDate`——Sub-task 创建时这两项必填
+- `priority` 完全由草稿决定（Sub-task 按规范不带优先级）
+- Reporter 不支持（该 Jira 项目屏幕未开放此字段）
+- **已知限制**：Bug 的 Severity / Source 等必填自定义字段暂不支持自动提交，AI 会写进 description 并在 notes 里提醒人工补填
 
 ## 架构速览
 
 ```
 src/
-├── clients/        Atlassian HTTP 层（原生 fetch + Basic auth，凭证收敛在 atlassian-auth.ts）
-│   ├── confluence-client.ts   页面 → markdown（复用自 ai-game-whole-game-pipeline，含 5 条 Confluence 修复规则）
-│   └── jira-client.ts         createmeta / createIssue / issueLink，Jira 错误体透传
-├── llm/client.ts   Anthropic 结构化输出薄封装（messages.parse + zod schema + prompt cache）
-├── core/           纯库层（不碰 argv/stdout）: config / schema / spec-cache / sync-spec / draft / submit / render
-├── prompts/        draft 的 system prompt 模板（{{SPEC}} 注入规范全文）
-└── cli/index.ts    commander 薄壳: sync-spec / draft / submit
+├── clients/          Atlassian HTTP 层（fetch + Basic auth）: confluence(页面→md) / jira(createmeta/create/link/users)
+├── llm/client.ts     Anthropic 结构化输出（messages.parse + zod + prompt cache）
+├── core/             纯库层: config / schema / spec-cache / sync-spec / draft / submit / render
+├── stores/           持久层: DraftStore(fs / S3, 每人一夹) + UserStore(users.json, 30s 缓存)
+├── server/
+│   ├── index.ts      bootstrap: store 选择(S3/fs)、种管理员、listen
+│   ├── app.ts        Express 组装: 静态托管 web/dist + 中间件链 + 路由挂载
+│   ├── session.ts    scrypt 密码哈希 + HMAC 签名无状态 cookie（7 天）
+│   ├── middlewares/  attachAuth / requireAuth / requireAdmin / 登录限速 / 统一错误
+│   ├── services/     drafts 编排 + enforcePolicy(权限规则唯一出处)
+│   └── routes/       auth / drafts / meta / admin
+├── cli/              commander 薄壳（个人本地模式）
+web/                  React 18 + Vite + TS 前端（pages/ + components/，构建产物 web/dist）
 ```
 
-关键设计:
+关键设计：
 
-- **规范静态缓存**: draft 读本地 `.cache/`，不实时拉 Confluence —— 快、离线可用、system prompt 字节稳定（Anthropic prompt cache 跨多次 draft 命中省钱）。
-- **结构化输出**: LLM 经 API 层 schema 约束直接产出合法 JSON（zod 定义见 `src/core/schema.ts`），票间关系用局部 id（t1/t2），submit 时按拓扑序（先父后子）映射成真实 key。
-- **草稿即进度日志**: `drafts/*.json` 是唯一真相源（`.md` 仅预览），submit 的写回让重跑天然幂等。
-
-## 开发
-
-```bash
-npm test                # vitest 单测
-npm run typecheck       # tsc --noEmit
-```
+- **无状态会话**：cookie 只装身份（email+exp 的 HMAC），级别/停用状态每个请求从用户表现读——容器重启/多实例天然兼容，停用 30 秒内生效
+- **规范静态缓存**：draft 读 `.cache/`，system prompt 字节稳定（Anthropic prompt cache 跨请求命中省钱）
+- **草稿即历史**：`drafts/*.json` 是唯一真相源，submit 写回 Jira key，重跑幂等

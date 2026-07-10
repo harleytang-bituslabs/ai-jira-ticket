@@ -1,0 +1,39 @@
+# AWS CodeBuild：typecheck + 测试 → docker 镜像 → 推 ECR → imagedefinitions.json（给 ECS 部署用）。
+#
+# CodeBuild 项目要求：
+#   - 环境镜像勾选 Privileged（docker in docker）
+#   - 环境变量 ECR_REPO = <account>.dkr.ecr.<region>.amazonaws.com/ajt（仓库需先建好）
+#   - 服务角色带 ECR push 权限（AmazonEC2ContainerRegistryPowerUser 即可）
+
+version: 0.2
+
+env:
+  variables:
+    ECR_REPO: ""
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+    commands:
+      - npm ci
+  pre_build:
+    commands:
+      - npm run typecheck
+      - npm test
+      - test -n "$ECR_REPO" || { echo "环境变量 ECR_REPO 未设置"; exit 1; }
+      - aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" | docker login --username AWS --password-stdin "${ECR_REPO%%/*}"
+      - IMAGE_TAG="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}"
+  build:
+    commands:
+      - docker build -t "$ECR_REPO:$IMAGE_TAG" -t "$ECR_REPO:latest" .
+  post_build:
+    commands:
+      - docker push "$ECR_REPO:$IMAGE_TAG"
+      - docker push "$ECR_REPO:latest"
+      # ECS 标准部署产物：容器名 ajt 对应任务定义里的 containerDefinitions[].name
+      - printf '[{"name":"ajt","imageUri":"%s"}]' "$ECR_REPO:$IMAGE_TAG" > imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
