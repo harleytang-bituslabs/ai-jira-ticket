@@ -11,7 +11,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: User) => void }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password) {
-      setErr("请输入邮箱和密码");
+      setErr("请输入登录名和密码");
       return;
     }
     setBusy(true);
@@ -32,8 +32,9 @@ export function LoginPage({ onLogin }: { onLogin: (u: User) => void }) {
         <h1>ajt · AI 开票</h1>
         <div className="sub">用工作邮箱登录；没有账号请找管理员开通</div>
         <label>工作邮箱</label>
+        {/* type=text 而非 email：内建管理员用纯用户名登录，浏览器校验会拦下不含 @ 的值 */}
         <input
-          type="email"
+          type="text"
           autoComplete="username"
           autoFocus
           value={email}

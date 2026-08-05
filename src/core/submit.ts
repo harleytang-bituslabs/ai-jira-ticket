@@ -166,7 +166,11 @@ export async function submitDraft(input: DraftFile, opts: SubmitOptions): Promis
         ...(t.parent ? { parentKey: resolveRef(t.parent) } : {}),
         ...(t.assignee ? { assigneeAccountId: accountIds.get(t.assignee)! } : {}),
         ...(t.dueDate ? { dueDate: t.dueDate } : {}),
-        extraFields: opts.config.staticFields,
+        // 开始日期是自定义字段，走 extraFields；staticFields 后置以保留其覆盖权
+        extraFields: {
+          ...(t.startDate && opts.config.startDateField ? { [opts.config.startDateField]: t.startDate } : {}),
+          ...opts.config.staticFields,
+        },
       });
       t.jiraKey = created.key;
       t.jiraUrl = created.url;

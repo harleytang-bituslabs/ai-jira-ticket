@@ -23,7 +23,7 @@ AI 开票助手：输入口语化的中/英文描述，按团队保存在 Conflu
 | `ATLASSIAN_EMAIL` / `ATLASSIAN_API_TOKEN` | ✅ | Atlassian API 凭证（Confluence + Jira 共用；兼容旧 `CONFLUENCE_*` 变量名） |
 | `ANTHROPIC_API_KEY` | ✅ | AI 起草用 |
 | `SESSION_SECRET` | 生产✅ | 会话 cookie 的 HMAC 密钥（≥32 随机字符）。不设则每次重启随机生成，所有人被登出 |
-| `AJT_ADMIN_EMAIL` / `AJT_ADMIN_PASSWORD` | 首启✅ | 用户表为空时种入第一个管理员，之后无作用 |
+| `AJT_ADMIN_EMAIL` / `AJT_ADMIN_PASSWORD` | 首启✅ | 用户表为空时种入第一个管理员，之后无作用（`AJT_ADMIN_NAME` 可选，默认取邮箱前缀） |
 | `AJT_S3_BUCKET` | | 设了走 S3 存储（草稿 `drafts/{email}/` + 用户表 `users.json`）；不设用本地 fs（开发模式）。凭证走标准 AWS 链（实例角色 / env） |
 | `AJT_HOST` / `AJT_PORT` | | 默认 `127.0.0.1:9300`；容器/对外部署设 `AJT_HOST=0.0.0.0` |
 | `AJT_COOKIE_SECURE` | | 上 HTTPS 后设 `1`（cookie 加 Secure 标记） |

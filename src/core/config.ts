@@ -32,6 +32,12 @@ const ConfigSchema = z.object({
   defaultPriority: z.string().optional(),
   /** Extra Jira fields merged into every createIssue payload (escape hatch for required custom fields). */
   staticFields: z.record(z.string(), z.unknown()).default({}),
+  /**
+   * Jira field id for「开始日期」— not a standard field, so the id is
+   * instance-specific (bituslabs: customfield_10015, on all AIP create
+   * screens). Set to "" to stop sending startDate entirely.
+   */
+  startDateField: z.string().default("customfield_10015"),
   /** Language for ticket text: zh / en / auto (follow the input). */
   language: z.enum(["zh", "en", "auto"]).default("auto"),
   cacheDir: z.string().default(".cache"),

@@ -6,7 +6,7 @@
  */
 
 import { Router } from "express";
-import { USER_LEVELS, type UserLevel, type UserRecord, type UserStore } from "../../stores/user-store.js";
+import { ACCOUNT_ID_RE, USER_LEVELS, type UserLevel, type UserRecord, type UserStore } from "../../stores/user-store.js";
 import { HttpError } from "../middlewares/error.js";
 import { hashPassword } from "../session.js";
 
@@ -34,7 +34,7 @@ export function adminRoutes(users: UserStore): Router {
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
     const jiraEmail = typeof body.jiraEmail === "string" && body.jiraEmail.trim() ? body.jiraEmail.trim().toLowerCase() : undefined;
-    if (!/^[\w.+-]+@[\w.-]+$/.test(email)) throw new HttpError(400, "邮箱格式不正确");
+    if (!ACCOUNT_ID_RE.test(email)) throw new HttpError(400, "登录名须是工作邮箱或纯用户名(字母数字开头)");
     if (!name) throw new HttpError(400, "姓名不能为空");
     if (password.length < 8) throw new HttpError(400, "初始密码至少 8 位");
     if (!isLevel(body.level)) throw new HttpError(400, `level 须为 ${USER_LEVELS.join("/")}`);

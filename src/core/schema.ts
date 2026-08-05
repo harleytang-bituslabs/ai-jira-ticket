@@ -37,6 +37,12 @@ export const TicketSchema = z.object({
   parent: z.string().regex(REF_RE, 'parent must be "tN" or a Jira key like "AIP-12"').nullable().default(null),
   /** Name or email; submit resolves it to an accountId via user search. */
   assignee: z.string().nullable().default(null),
+  /** YYYY-MM-DD; sent as config.startDateField (Jira 的开始日期是自定义字段). */
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "startDate must be YYYY-MM-DD")
+    .nullable()
+    .default(null),
   /** YYYY-MM-DD; required at creation for Sub-tasks in spec-compliant projects. */
   dueDate: z
     .string()

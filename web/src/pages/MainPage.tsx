@@ -10,7 +10,6 @@ import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
 import { ComposeForm } from "../components/ComposeForm";
 import { Editor } from "../components/Editor";
 import { HistoryView } from "../components/HistoryView";
-import { LEVEL_LABELS } from "../constants";
 import type { DraftEntry, Meta, User } from "../types";
 
 export type Flash = { text: string; cls?: "ok" | "error" } | null;
@@ -69,7 +68,6 @@ export function MainPage({ user, onLogout }: { user: User; onLogout: () => void 
         </nav>
         <span className="userbox">
           <span className="who">{user.name}</span>
-          <span>· {LEVEL_LABELS[user.level]}</span>
           <button onClick={() => setPwOpen(true)}>改密</button>
           <button onClick={logout}>退出</button>
         </span>
@@ -105,6 +103,7 @@ export function MainPage({ user, onLogout }: { user: User; onLogout: () => void 
         {tab === "history" && (
           <HistoryView
             user={user}
+            roster={meta?.roster ?? []}
             currentId={current?.id ?? null}
             onEdit={editFromHistory}
             onDeletedCurrent={() => setCurrent(null)}

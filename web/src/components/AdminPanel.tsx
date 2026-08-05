@@ -85,8 +85,8 @@ export function AdminPanel() {
       <section className="card">
         <form className="addUser" onSubmit={create}>
           <div className="fgroup">
-            <label>工作邮箱（登录名）</label>
-            <input type="email" required value={nEmail} onChange={(e) => setNEmail(e.target.value)} placeholder="name@bituslabs.com" />
+            <label>登录名（工作邮箱）</label>
+            <input type="text" required value={nEmail} onChange={(e) => setNEmail(e.target.value)} placeholder="name@bituslabs.com" />
           </div>
           <div className="fgroup">
             <label>姓名</label>

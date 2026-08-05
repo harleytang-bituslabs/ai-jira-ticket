@@ -1,7 +1,7 @@
 /**
  * Draft persistence for the multi-user web service. Each user owns a folder:
  *
- *   drafts/{owner}/{draftId}.json      (owner = 登录邮箱)
+ *   drafts/{owner}/{draftId}.json      (owner = 登录标识:邮箱或用户名)
  *
  * Two backends behind one interface — fs for local dev, S3 for deployment
  * (bootstrap picks by AJT_S3_BUCKET). The web UI itself is the preview, so
@@ -21,6 +21,7 @@ import {
 import { assertDraftId, draftBaseName } from "../core/draft-files.js";
 import { DraftFileSchema, type DraftFile } from "../core/schema.js";
 import { atomicWrite } from "../utils/fs.js";
+import { ACCOUNT_ID_RE } from "./user-store.js";
 
 export interface DraftListEntry {
   id: string;
@@ -38,11 +39,9 @@ export interface DraftStore {
   delete(owner: string, id: string): Promise<void>;
 }
 
-/** Owner 就是邮箱;顺带排除任何路径穿越的可能。 */
-const OWNER_RE = /^[\w.+-]+@[\w.-]+$/;
-
+/** Owner 就是账号标识(邮箱或用户名);该正则同时排除路径穿越。 */
 export function assertOwner(owner: string): void {
-  if (!OWNER_RE.test(owner)) throw new Error(`非法的用户标识: ${owner}`);
+  if (!ACCOUNT_ID_RE.test(owner)) throw new Error(`非法的用户标识: ${owner}`);
 }
 
 const byNewest = (a: DraftListEntry, b: DraftListEntry): number =>
@@ -85,7 +84,7 @@ export class FsDraftStore implements DraftStore {
     } catch {
       return [];
     }
-    const perOwner = await Promise.all(names.filter((n) => OWNER_RE.test(n)).map((owner) => this.list(owner)));
+    const perOwner = await Promise.all(names.filter((n) => ACCOUNT_ID_RE.test(n)).map((owner) => this.list(owner)));
     return perOwner.flat().sort(byNewest);
   }
 

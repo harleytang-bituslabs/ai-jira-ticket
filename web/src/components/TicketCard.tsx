@@ -4,7 +4,7 @@
  */
 
 import { useMemo } from "react";
-import { isSubmitted, orderedTypes } from "../constants";
+import { displayName, isSubmitted, orderedTypes } from "../constants";
 import type { Meta, Ticket, User } from "../types";
 
 export function TicketCard({
@@ -58,7 +58,8 @@ export function TicketCard({
           {t.issueType}
           {t.priority ? ` · ${t.priority}` : ""}
           {t.parent ? ` · 父级 ${t.parent}` : ""}
-          {t.assignee ? ` · ${t.assignee}` : ""}
+          {t.assignee ? ` · ${displayName(t.assignee, meta.roster)}` : ""}
+          {t.startDate ? ` · ${t.startDate} 起` : ""}
           {t.dueDate ? ` · 截止 ${t.dueDate}` : ""}
         </div>
         <details>
@@ -129,7 +130,19 @@ export function TicketCard({
             {t.assignee && !meta.roster.some((m) => m.email === t.assignee) && <option value={t.assignee}>{t.assignee}</option>}
           </select>
         )}
-        <input type="date" className={bad("dueDate").trim()} value={t.dueDate ?? ""} onChange={(e) => onChange({ dueDate: e.target.value || null })} />
+        <input
+          type="date"
+          title="开始日期"
+          value={t.startDate ?? ""}
+          onChange={(e) => onChange({ startDate: e.target.value || null })}
+        />
+        <input
+          type="date"
+          title="截止日期"
+          className={bad("dueDate").trim()}
+          value={t.dueDate ?? ""}
+          onChange={(e) => onChange({ dueDate: e.target.value || null })}
+        />
         <button className="danger del" onClick={onDelete}>
           删除此票
         </button>

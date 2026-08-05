@@ -22,6 +22,7 @@ export interface Ticket {
   labels: string[];
   parent: string | null;
   assignee: string | null;
+  startDate: string | null;
   dueDate: string | null;
   estimate: string | null;
   jiraKey?: string;

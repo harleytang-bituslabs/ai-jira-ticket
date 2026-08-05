@@ -1,6 +1,6 @@
 /** 值级配色、类型排序、必填规则——开票表单与卡片共用（等价迁移自 1.x）。 */
 
-import type { Meta, Ticket, User, UserLevel } from "./types";
+import type { Meta, RosterMember, Ticket, User, UserLevel } from "./types";
 
 /** 类型固定顺序（Bug 殿后）。 */
 export const TYPE_ORDER = ["Epic", "Story", "Task", "Sub-task", "Bug"];
@@ -26,6 +26,13 @@ export const PRIORITY_COLORS: Record<string, string> = {
 export const LEVEL_LABELS: Record<UserLevel, string> = { l1: "普通", l2: "高级", admin: "管理员" };
 
 export const isSubmitted = (t: Ticket): boolean => Boolean(t.jiraKey);
+
+/**
+ * 邮箱 → 人名。邮箱只是人与 Jira 账号的对应键，界面上一律显示人名；
+ * 名册里查不到的（离职、外部账号）退回显示原值，总比空着好。
+ */
+export const displayName = (email: string | null | undefined, roster: RosterMember[]): string =>
+  email ? (roster.find((m) => m.email === email)?.name ?? email) : "";
 
 export function orderedTypes(meta: Meta, user: User): Array<{ name: string; subtask: boolean }> {
   const sorted = [...meta.issueTypes].sort((a, b) => {

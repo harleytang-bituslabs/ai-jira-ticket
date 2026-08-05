@@ -39,6 +39,7 @@ export function ComposeForm({
   const [parent, setParent] = useState("");
   const [assignee, setAssignee] = useState<string | null>(isL1 ? user.jiraEmail : null);
   const [assigneeText, setAssigneeText] = useState(""); // 大名册模式下输入框的显示文本
+  const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [splitMode, setSplitMode] = useState<"" | "1" | "n">("");
   const [splitN, setSplitN] = useState(2);
@@ -140,6 +141,7 @@ export function ComposeForm({
           priority,
           parentKey: parent || null,
           assignee: isL1 ? user.jiraEmail : assignee,
+          startDate: startDate || null,
           dueDate: dueDate || null,
         },
       });
@@ -174,6 +176,63 @@ export function ComposeForm({
           <label>类型</label>
           <Seg items={types.map((t) => ({ label: t.name, value: t.name, color: TYPE_COLORS[t.name] }))} value={type} onChange={pickType} />
         </div>
+        <div className="fgroup">
+          <label>指派给</label>
+          {isL1 ? (
+            // 低级账号只能给自己开票：单按钮常亮，不可改
+            <span className="seg lone">
+              <button type="button" className="active">
+                {user.name}（本人）
+              </button>
+            </span>
+          ) : bigRoster ? (
+            <input
+              className={"assigneePick" + (invalid.has("assignee") ? " invalid" : "")}
+              list="rosterList"
+              placeholder="输入姓名搜索（必填）"
+              value={assigneeText}
+              onChange={(e) => pickAssigneeText(e.target.value)}
+            />
+          ) : (
+            <Seg
+              items={meta.roster.map((m) => ({ label: m.name, value: m.email }))}
+              value={assignee}
+              onChange={(v) => {
+                setAssignee(v);
+                clearMark("assignee");
+              }}
+              invalid={invalid.has("assignee")}
+            />
+          )}
+          {bigRoster && (
+            <datalist id="rosterList">
+              {meta.roster.map((m) => (
+                <option key={m.email} value={m.name}>
+                  {m.email}
+                </option>
+              ))}
+            </datalist>
+          )}
+        </div>
+        <div className="fgroup">
+          <label>开始日期</label>
+          <input type="date" className="dueDate" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        </div>
+        <div className="fgroup">
+          <label>截止日期</label>
+          <input
+            type="date"
+            className={"dueDate" + (invalid.has("dueDate") ? " invalid" : "")}
+            value={dueDate}
+            onChange={(e) => {
+              setDueDate(e.target.value);
+              clearMark("dueDate");
+            }}
+          />
+        </div>
+      </div>
+      {/* 父级独占一行：Epic/Story 标题往往很长，挤在第一行会被压得看不见 */}
+      <div className="frow">
         <div className="fgroup grow">
           <label>父级</label>
           <div className="parentPick">
@@ -223,58 +282,6 @@ export function ComposeForm({
               )}
             </select>
           </div>
-        </div>
-      </div>
-      <div className="frow">
-        <div className="fgroup">
-          <label>指派给</label>
-          {isL1 ? (
-            // 低级账号只能给自己开票：单按钮常亮，不可改
-            <span className="seg lone">
-              <button type="button" className="active">
-                {user.name}（本人）
-              </button>
-            </span>
-          ) : bigRoster ? (
-            <input
-              className={"assigneePick" + (invalid.has("assignee") ? " invalid" : "")}
-              list="rosterList"
-              placeholder="输入姓名搜索（必填）"
-              value={assigneeText}
-              onChange={(e) => pickAssigneeText(e.target.value)}
-            />
-          ) : (
-            <Seg
-              items={meta.roster.map((m) => ({ label: m.name, value: m.email }))}
-              value={assignee}
-              onChange={(v) => {
-                setAssignee(v);
-                clearMark("assignee");
-              }}
-              invalid={invalid.has("assignee")}
-            />
-          )}
-          {bigRoster && (
-            <datalist id="rosterList">
-              {meta.roster.map((m) => (
-                <option key={m.email} value={m.name}>
-                  {m.email}
-                </option>
-              ))}
-            </datalist>
-          )}
-        </div>
-        <div className="fgroup">
-          <label>截止日期</label>
-          <input
-            type="date"
-            className={"dueDate" + (invalid.has("dueDate") ? " invalid" : "")}
-            value={dueDate}
-            onChange={(e) => {
-              setDueDate(e.target.value);
-              clearMark("dueDate");
-            }}
-          />
         </div>
       </div>
       <label>需求描述（口语化描述要做的事即可）</label>

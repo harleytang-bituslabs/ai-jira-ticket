@@ -6,8 +6,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
-import { isSubmitted } from "../constants";
-import type { DraftEntry, User } from "../types";
+import { displayName, isSubmitted } from "../constants";
+import type { DraftEntry, RosterMember, User } from "../types";
 
 interface Filters {
   from: string;
@@ -22,11 +22,13 @@ const EMPTY: Filters = { from: "", to: "", parent: "", assignee: "", status: "",
 
 export function HistoryView({
   user,
+  roster,
   currentId,
   onEdit,
   onDeletedCurrent,
 }: {
   user: User;
+  roster: RosterMember[];
   currentId: string | null;
   onEdit: (entry: DraftEntry) => void;
   onDeletedCurrent: () => void;
@@ -124,7 +126,7 @@ export function HistoryView({
               <option value="">全部</option>
               {options.assignees.map((a) => (
                 <option key={a} value={a}>
-                  {a}
+                  {displayName(a, roster)}
                 </option>
               ))}
             </select>
@@ -208,7 +210,7 @@ export function HistoryView({
                       <span className="chip draft">草稿</span>
                       <span className="sum">{t.summary}</span>
                       <span className="hint">
-                        {t.assignee || ""}
+                        {displayName(t.assignee, roster)}
                         {t.dueDate ? ` · ${t.dueDate}` : ""}
                       </span>
                     </>

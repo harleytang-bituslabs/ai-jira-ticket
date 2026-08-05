@@ -16,8 +16,14 @@ import { atomicWrite } from "../utils/fs.js";
 export const USER_LEVELS = ["l1", "l2", "admin"] as const;
 export type UserLevel = (typeof USER_LEVELS)[number];
 
+/**
+ * 账号标识:工作邮箱,或纯用户名(如内建的 admin)。必须以字母数字开头 ——
+ * 既排除 ".."/"." 这类路径穿越,也排除 S3 key 里的怪字符(草稿目录名就是它)。
+ */
+export const ACCOUNT_ID_RE = /^[a-z0-9][\w.+-]*(@[\w.-]+)?$/i;
+
 const UserRecordSchema = z.object({
-  /** 登录邮箱,唯一标识(大小写不敏感)。 */
+  /** 登录标识:邮箱或用户名,唯一(大小写不敏感)。 */
   email: z.string().min(3),
   name: z.string().min(1),
   /** Jira 账号邮箱与登录邮箱不一致时由管理员配置;缺省即用 email。 */

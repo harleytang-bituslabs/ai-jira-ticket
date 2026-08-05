@@ -18,6 +18,7 @@ export interface ComposeDefaults {
   priority: string | null;
   parentKey: string | null;
   assignee: string | null;
+  startDate: string | null;
   dueDate: string | null;
 }
 
@@ -27,6 +28,7 @@ export function parseComposeDefaults(raw: Record<string, unknown>): ComposeDefau
     priority: str(raw.priority),
     parentKey: str(raw.parentKey),
     assignee: str(raw.assignee),
+    startDate: str(raw.startDate),
     dueDate: str(raw.dueDate),
   };
 }
@@ -50,6 +52,7 @@ export async function buildFieldDirectives(
     const name = config.teamMembers.find((m) => m.email === defaults.assignee)?.name ?? defaults.assignee;
     parts.push(`指派 ${name}`);
   }
+  if (defaults.startDate) parts.push(`开始 ${defaults.startDate}`);
   if (defaults.dueDate) parts.push(`截止 ${defaults.dueDate}`);
   if (defaults.priority) parts.push(`优先级 ${defaults.priority}`);
   return parts.length
@@ -70,6 +73,7 @@ export function applyComposeDefaults(draft: DraftFile, defaults: ComposeDefaults
       if (defaults.parentKey) t.parent = defaults.parentKey;
     }
     if (defaults.assignee) t.assignee = defaults.assignee;
+    if (defaults.startDate) t.startDate = defaults.startDate;
     if (defaults.dueDate) t.dueDate = defaults.dueDate;
     if (defaults.priority) t.priority = t.issueType === "Sub-task" ? null : defaults.priority;
   }

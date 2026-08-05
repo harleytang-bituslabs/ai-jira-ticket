@@ -88,8 +88,16 @@ describe("FsDraftStore", () => {
 
   it("rejects path-traversal owners and ids", async () => {
     expect(() => assertOwner("../../etc")).toThrow(/非法/);
+    expect(() => assertOwner("..")).toThrow(/非法/); // 必须字母数字开头,纯点号进不来
+    expect(() => assertOwner(".hidden")).toThrow(/非法/);
     await expect(store.read(A, "../secrets")).rejects.toThrow(/非法/);
-    await expect(store.list("no-at-sign")).resolves.toEqual([]); // dir() throws → 由调用方守卫;list 对不存在目录返回空
+  });
+
+  it("accepts a plain username as owner (内建 admin 账号不用邮箱)", async () => {
+    expect(() => assertOwner("admin")).not.toThrow();
+    const saved = await store.write("admin", mkDraft("2026-08-01T00:00:00.000Z"));
+    expect((await store.list("admin")).map((e) => e.id)).toEqual([saved.id]);
+    expect((await store.listAll()).some((e) => e.owner === "admin")).toBe(true);
   });
 });
 

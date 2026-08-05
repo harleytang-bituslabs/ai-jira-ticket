@@ -17,7 +17,7 @@ export async function bootstrapAdmin(users: UserStore): Promise<void> {
   }
   await users.upsert({
     email,
-    name: email.split("@")[0],
+    name: process.env.AJT_ADMIN_NAME?.trim() || email.split("@")[0]!,
     level: "admin",
     scrypt: await hashPassword(password),
     active: true,

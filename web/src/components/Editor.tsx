@@ -164,7 +164,15 @@ export function Editor({
         </button>
         <span className={"status" + (status?.cls ? " " + status.cls : "")}>{status?.text ?? ""}</span>
       </div>
-      {confirmOpen && <ConfirmDialog tickets={pending} busy={busy} onConfirm={() => void doSubmit()} onCancel={() => setConfirmOpen(false)} />}
+      {confirmOpen && (
+        <ConfirmDialog
+          tickets={pending}
+          roster={meta.roster}
+          busy={busy}
+          onConfirm={() => void doSubmit()}
+          onCancel={() => setConfirmOpen(false)}
+        />
+      )}
     </div>
   );
 }

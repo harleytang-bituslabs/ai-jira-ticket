@@ -1,14 +1,17 @@
-/** 提交防呆：列出即将上板的每张票（类型/标题/指派/截止）+ 总数，确认才调 API。 */
+/** 提交防呆：列出即将上板的每张票（类型/标题/指派/日期）+ 总数，确认才调 API。 */
 
-import type { Ticket } from "../types";
+import { displayName } from "../constants";
+import type { RosterMember, Ticket } from "../types";
 
 export function ConfirmDialog({
   tickets,
+  roster,
   busy,
   onConfirm,
   onCancel,
 }: {
   tickets: Ticket[];
+  roster: RosterMember[];
   busy: boolean;
   onConfirm: () => void;
   onCancel: () => void;
@@ -25,7 +28,8 @@ export function ConfirmDialog({
             <span className="chip draft">{t.issueType}</span>
             <span className="sum">{t.summary}</span>
             <span className="meta">
-              {t.assignee || "不指派"}
+              {displayName(t.assignee, roster) || "不指派"}
+              {t.startDate ? ` · ${t.startDate} 起` : ""}
               {t.dueDate ? ` · 截止 ${t.dueDate}` : ""}
             </span>
           </div>

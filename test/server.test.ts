@@ -92,6 +92,7 @@ beforeAll(async () => {
     specPageUrls: ["https://example.atlassian.net/wiki/spaces/X/pages/1/Spec"],
     defaultPriority: "P2",
     staticFields: {},
+    startDateField: "customfield_10015",
     language: "auto",
     cacheDir,
     draftsDir,

@@ -91,6 +91,12 @@ describe("DraftPayloadSchema", () => {
     expect(DraftPayloadSchema.safeParse({ tickets: [ticket({ dueDate: "2026-06-19" })] }).success).toBe(true);
     expect(DraftPayloadSchema.safeParse({ tickets: [ticket({ dueDate: "6月19日" })] }).success).toBe(false);
   });
+
+  it("validates startDate the same way and defaults it to null", () => {
+    expect(DraftPayloadSchema.parse({ tickets: [ticket()] }).tickets[0]!.startDate).toBeNull();
+    expect(DraftPayloadSchema.safeParse({ tickets: [ticket({ startDate: "2026-06-01" })] }).success).toBe(true);
+    expect(DraftPayloadSchema.safeParse({ tickets: [ticket({ startDate: "下周一" })] }).success).toBe(false);
+  });
 });
 
 describe("DraftFileSchema", () => {
