@@ -36,6 +36,8 @@ button:disabled { opacity:.5; cursor:wait; }
 .composeFoot { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-top:14px; flex-wrap:wrap; }
 .composeFoot .left { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .composeFoot .right { margin-left:auto; display:flex; align-items:center; gap:12px; }
+/* 状态提示自己一行，右对齐贴着上方的两个按钮 */
+.composeStatus { margin-top:10px; text-align:right; }
 .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
 .seg button { border:0; border-right:1px solid var(--line); background:#fff; padding:0 14px; height:34px; font:inherit; font-size:13px; cursor:pointer; color:var(--muted); }
 .seg button:last-child { border-right:0; }
@@ -58,6 +60,15 @@ button:disabled { opacity:.5; cursor:wait; }
 .ticket .head { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .ticket .head .lid { font-weight:700; font-size:13px; color:var(--muted); }
 .ticket .head select, .ticket .head input[type=date] { width:auto; min-width:96px; font-size:13px; padding:6px 8px; }
+/* 眉头压成一行（9 个控件）：每个都收到"刚够认"的尺寸，省下的宽度全留给父级
+   （选项是 AIP-21 · 长标题，最需要看清）。截断的信息一律挂 title 悬停可查。
+   仍保留 flex-wrap 作为兜底：窗口极窄时换行，也绝不溢出裁掉。 */
+.ticket .head { gap:6px; }
+.ticket .head .prio { width:72px; min-width:0; }
+.ticket .head .itype { width:92px; min-width:0; }
+.ticket .head .assg { width:92px; min-width:0; }
+.ticket .head input[type=date] { width:122px; min-width:0; }
+.ticket .head .del { padding:6px 10px; font-size:13px; }
 /* 父级框弹性伸缩：只设下限、上不封顶，吸收行内全部富余宽度；
    窗口变窄时它先收缩，压到下限后才允许换行（按钮可换行但绝不溢出隐藏） */
 .ticket .head .parent { flex:1 1 auto; min-width:56px; }
@@ -75,6 +86,19 @@ button:disabled { opacity:.5; cursor:wait; }
 .frow { display:flex; gap:18px; margin-bottom:10px; flex-wrap:wrap; align-items:flex-start; }
 .frow .fgroup { flex:0 1 auto; }
 .frow .fgroup.grow { flex:1; min-width:280px; }
+/* 字段行放得下时铺满整行：加宽控件本身，间距恒定 18px（拉大间距会在控件之间
+   撑出空洞，字段反而更难扫）。放不下就换行，退回自然宽度。
+   用容器查询而非视口断点：main 是视口的 80%，量容器才是量"这一行放不放得下"。 */
+.card { container-type: inline-size; }
+@container (min-width: 900px) {
+  .frow.spread > .fgroup { flex: 1 1 auto; min-width: 0; }
+  /* inline-flex 不吃宽度，必须换成 flex 才能被父级撑开 */
+  .frow.spread .seg { display: flex; }
+  /* 1 0 auto 而非 1：flex-basis 归零会让所有按钮等宽，长标签（Sub-task）会被压掉字 */
+  .frow.spread .seg button { flex: 1 0 auto; }
+  .frow.spread .dueDate,
+  .frow.spread .assigneePick { width: 100%; }
+}
 .fgroup label { margin:0 0 5px; }
 .parentPick { display:flex; gap:8px; }
 .parentPick select { flex:1; min-width:0; }

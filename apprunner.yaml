@@ -1,0 +1,35 @@
+# AWS App Runner —— 源码直连模式：推 main → 自动构建 → 滚动部署（零停机）。
+#
+# 为什么不用 Dockerfile/ECR：源码模式省掉 CodeBuild + ECR 两层，App Runner 直接
+# 用托管 Node 运行时构建。Dockerfile 与 buildspec.yml 仍保留 —— 想换回 ECS/ECR
+# 时不用重写（见 README 部署章节）。
+#
+# 密钥不写在这里：ANTHROPIC_API_KEY / ATLASSIAN_API_TOKEN / SESSION_SECRET 走
+# Secrets Manager，在服务配置里以 secrets 引用注入（控制台清单见 docs/deploy-apprunner.md）。
+
+version: 1.0
+runtime: nodejs22
+
+build:
+  commands:
+    build:
+      - npm ci
+      - npm run build:web
+      - npm prune --omit=dev # 构建产物已生成，运行时不需要 vite/vitest/typescript
+
+run:
+  runtime-version: 22
+  command: ./node_modules/.bin/tsx src/server/index.ts
+  network:
+    port: 9300
+  env:
+    - name: AJT_HOST
+      value: "0.0.0.0" # 容器内必须绑 0.0.0.0，否则健康检查打不进来
+    - name: AJT_PORT
+      value: "9300"
+    - name: AJT_S3_BUCKET
+      value: "bituslabs-ai-jira-ticket" # 草稿与用户表的唯一真相源（容器磁盘是易失的）
+    - name: AJT_COOKIE_SECURE
+      value: "1" # App Runner 终结 TLS，会话 cookie 可以要求 Secure
+    - name: NODE_ENV
+      value: "production"

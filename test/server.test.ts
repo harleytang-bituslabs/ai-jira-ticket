@@ -236,6 +236,24 @@ describe("draft APIs are user-scoped", () => {
     expect(tickets.find((t) => t.localId === "t2")?.jiraKey).toBeUndefined(); // 伪造 key 剥除
   });
 
+  it("PUT keeps the record's id when the title changes (no duplicate history entry)", async () => {
+    const draft = mkDraft([ticket("t1", { summary: "[Some Epic] Before" })], "2026-07-03T09:00:00.000Z");
+    const saved = await drafts.write(ALICE, draft);
+    const agent = await login(ALICE);
+
+    const before = (await agent.get("/api/drafts")).body.drafts.length as number;
+
+    const renamed = structuredClone(draft);
+    renamed.tickets[0]!.summary = "[Some Epic] After rename";
+    const r = await agent.put(`/api/drafts/${saved.id}`).send({ draft: renamed });
+
+    expect(r.status).toBe(200);
+    expect(r.body.id).toBe(saved.id);
+    const after = (await agent.get("/api/drafts")).body.drafts as Array<{ id: string; draft: { tickets: Array<{ summary: string }> } }>;
+    expect(after.length).toBe(before); // 改名没有凭空生成第二条
+    expect(after.find((e) => e.id === saved.id)?.draft.tickets[0]?.summary).toBe("[Some Epic] After rename");
+  });
+
   it("L1 cannot request Epic in compose defaults (rejected before any LLM call)", async () => {
     const agent = await login(ALICE);
     const r = await agent.post("/api/draft").send({ input: "建个大模块", defaults: { issueType: "Epic" } });

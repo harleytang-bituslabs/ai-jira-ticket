@@ -78,7 +78,10 @@ export interface Meta {
   epics: IssueRef[];
   standardParents: IssueRef[];
   roster: RosterMember[];
+  /** 「更新config」刷新的三份参考数据各自的时间；规范缓存可能还没建立。 */
+  specSyncedAt: string | null;
   issuesFetchedAt: string;
+  rosterFetchedAt: string | null;
 }
 
 export interface AdminUser {

@@ -6,7 +6,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
-import { orderedTypes, PRIORITY_COLORS, TYPE_COLORS } from "../constants";
+import { DEFAULT_TYPE, defaultPriority, orderedTypes, PRIORITY_COLORS, TYPE_COLORS } from "../constants";
 import type { Flash } from "../pages/MainPage";
 import type { DraftEntry, DraftFile, Meta, User } from "../types";
 import { Seg } from "./Seg";
@@ -33,8 +33,11 @@ export function ComposeForm({
   const types = useMemo(() => orderedTypes(meta, user), [meta, user]);
   const isL1 = user.level === "l1";
 
-  const [type, setType] = useState("Task");
-  const [priority, setPriority] = useState<string | null>("P2");
+  // 进来即是 Sub-task（团队日常开的绝大多数是子任务），项目里没这个类型时退回第一个
+  const initialType = types.some((t) => t.name === DEFAULT_TYPE) ? DEFAULT_TYPE : (types[0]?.name ?? "Task");
+  const [type, setType] = useState(initialType);
+  // 与初始类型保持一致：规范规定 Sub-task 不带优先级，否则一进页面就是矛盾状态
+  const [priority, setPriority] = useState<string | null>(initialType === "Sub-task" ? null : defaultPriority(meta));
   const [parentEpic, setParentEpic] = useState("");
   const [parent, setParent] = useState("");
   const [assignee, setAssignee] = useState<string | null>(isL1 ? user.jiraEmail : null);
@@ -67,7 +70,7 @@ export function ComposeForm({
     setParent("");
     // 规范规定 Sub-task 不使用优先级；切回其他类型时补默认值
     if (v === "Sub-task") setPriority(null);
-    else if (!priority) setPriority(meta.priorities.includes("P2") ? "P2" : (meta.priorities[0] ?? null));
+    else if (!priority) setPriority(defaultPriority(meta));
     clearMark("type");
   };
 
@@ -91,7 +94,10 @@ export function ComposeForm({
     try {
       const r = await api<{ spec: string; issueTotal: number; epicTotal: number; userTotal: number }>("POST", "/api/refresh");
       await onReloadMeta();
-      setStatus({ text: `已更新: ${r.spec} · ${r.issueTotal} 张票（${r.epicTotal} 个 Epic）· ${r.userTotal} 名用户`, cls: "ok" });
+      setStatus({
+        text: `已更新到最新: 规范${r.spec} · 看板 ${r.issueTotal} 张票（${r.epicTotal} 个 Epic）· 名册 ${r.userTotal} 人`,
+        cls: "ok",
+      });
     } catch (e) {
       setStatus({ text: errMsg(e), cls: "error" });
     } finally {
@@ -157,7 +163,7 @@ export function ComposeForm({
   const shown = status ?? flash;
   return (
     <section className="card">
-      <div className="frow">
+      <div className="frow spread">
         <div className="fgroup">
           <label>优先级</label>
           <Seg
@@ -308,7 +314,6 @@ export function ComposeForm({
           )}
         </div>
         <div className="right">
-          <span className={"status" + (shown?.cls ? " " + shown.cls : "")}>{shown?.text ?? ""}</span>
           <button className="ghost" disabled={busy} onClick={doRefresh}>
             更新config
           </button>
@@ -317,6 +322,8 @@ export function ComposeForm({
           </button>
         </div>
       </div>
+      {/* 提示独占一行放在按钮下方：更新结果这类长文案挤在按钮左边会压缩整行 */}
+      {shown?.text && <div className={"composeStatus status" + (shown.cls ? " " + shown.cls : "")}>{shown.text}</div>}
     </section>
   );
 }

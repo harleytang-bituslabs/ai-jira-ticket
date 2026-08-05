@@ -80,20 +80,20 @@ export function TicketCard({
         <span className="lid">{t.localId}</span>
         <span className="chip draft">草稿</span>
         <select
-          className={bad("priority").trim()}
+          className={("prio " + bad("priority")).trim()}
           disabled={t.issueType === "Sub-task"}
-          title={t.issueType === "Sub-task" ? "规范规定 Sub-task 不使用优先级" : undefined}
+          title={t.issueType === "Sub-task" ? "规范规定 Sub-task 不使用优先级" : "优先级（必填）"}
           value={t.priority ?? ""}
           onChange={(e) => onChange({ priority: e.target.value || null })}
         >
-          <option value="">优先级（必填）</option>
+          <option value="">优先级</option>
           {meta.priorities.map((p) => (
             <option key={p} value={p}>
               {p}
             </option>
           ))}
         </select>
-        <select value={t.issueType} onChange={(e) => pickType(e.target.value)}>
+        <select className="itype" title="类型" value={t.issueType} onChange={(e) => pickType(e.target.value)}>
           {types.map((x) => (
             <option key={x.name} value={x.name}>
               {x.name}
@@ -116,11 +116,16 @@ export function TicketCard({
           ))}
         </select>
         {isL1 ? (
-          <select className={bad("assignee").trim()} disabled value={t.assignee ?? user.jiraEmail} title="低级账号只能指派给本人">
+          <select className={("assg " + bad("assignee")).trim()} disabled value={t.assignee ?? user.jiraEmail} title="低级账号只能指派给本人">
             <option value={user.jiraEmail}>{user.name}（本人）</option>
           </select>
         ) : (
-          <select className={bad("assignee").trim()} value={t.assignee ?? ""} onChange={(e) => onChange({ assignee: e.target.value || null })}>
+          <select
+            className={("assg " + bad("assignee")).trim()}
+            title={displayName(t.assignee, meta.roster) || "指派给"}
+            value={t.assignee ?? ""}
+            onChange={(e) => onChange({ assignee: e.target.value || null })}
+          >
             <option value="">不指派</option>
             {meta.roster.map((m) => (
               <option key={m.email} value={m.email}>
@@ -143,8 +148,8 @@ export function TicketCard({
           value={t.dueDate ?? ""}
           onChange={(e) => onChange({ dueDate: e.target.value || null })}
         />
-        <button className="danger del" onClick={onDelete}>
-          删除此票
+        <button className="danger del" title="删除此票" onClick={onDelete}>
+          删除
         </button>
       </div>
       <label>标题</label>

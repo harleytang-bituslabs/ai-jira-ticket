@@ -25,6 +25,45 @@ export const PRIORITY_COLORS: Record<string, string> = {
 
 export const LEVEL_LABELS: Record<UserLevel, string> = { l1: "普通", l2: "高级", admin: "管理员" };
 
+/** 开票表单进来时预选的类型（团队日常开的绝大多数是子任务）。 */
+export const DEFAULT_TYPE = "Sub-task";
+
+/** 本地时间 YYYY-MM-DD HH:mm —— 比 toLocaleString() 的 "8/4/2026, 4:59:01 PM" 好认。 */
+export function fmtTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/**
+ * 顶栏那句"配置更新于…"。「更新config」会同时刷新规范文档、看板快照、人员名册，
+ * 三者通常同一时刻；但 CLI 能单独刷某一份，那就必须分开说，否则文案在撒谎。
+ */
+export function configFreshness(meta: Meta): { text: string; detail: string } {
+  const stamps = [
+    { label: "开票规范文档", at: meta.specSyncedAt },
+    { label: "Jira 看板", at: meta.issuesFetchedAt },
+    { label: "人员名册", at: meta.rosterFetchedAt },
+  ];
+  const detail = stamps.map((s) => `${s.label}: ${fmtTime(s.at)}`).join("\n");
+  const times = stamps.map((s) => (s.at ? new Date(s.at).getTime() : NaN));
+  const known = times.filter((t) => !Number.isNaN(t));
+  // 5 分钟内视为同一次刷新（三次网络请求本身有先后）
+  const together = known.length === stamps.length && Math.max(...known) - Math.min(...known) < 5 * 60_000;
+  return {
+    text: together
+      ? `开票规范与看板数据更新于 ${fmtTime(meta.specSyncedAt)}`
+      : `规范 ${fmtTime(meta.specSyncedAt)} · 看板 ${fmtTime(meta.issuesFetchedAt)}`,
+    detail,
+  };
+}
+
+/** 非 Sub-task 类型的默认优先级：规范定的 P2，项目里没有则取第一个。 */
+export const defaultPriority = (meta: Meta): string | null =>
+  meta.priorities.includes("P2") ? "P2" : (meta.priorities[0] ?? null);
+
 export const isSubmitted = (t: Ticket): boolean => Boolean(t.jiraKey);
 
 /**

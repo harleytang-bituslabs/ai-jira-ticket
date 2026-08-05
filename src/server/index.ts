@@ -15,6 +15,7 @@ import { FsDraftStore, S3DraftStore, type DraftStore } from "../stores/draft-sto
 import { FsUserStore, S3UserStore, type UserStore } from "../stores/user-store.js";
 import { buildApp } from "./app.js";
 import { bootstrapAdmin } from "./bootstrap.js";
+import { ensureCaches } from "./services/refresh.js";
 
 dotenv.config({ quiet: true });
 
@@ -43,4 +44,7 @@ app.listen(PORT, HOST, () => {
   if (HOST === "127.0.0.1") {
     console.log(`本机以外访问请走 SSH 隧道: ssh -L ${PORT}:localhost:${PORT} <这台服务器>`);
   }
+  // 先监听、后拉缓存：容器平台的健康检查等不了首启那几十秒（等不到 /healthz 就判部署失败）。
+  // 这几十秒里 /api/meta 会报错，拉完即自愈。
+  void ensureCaches(config);
 });

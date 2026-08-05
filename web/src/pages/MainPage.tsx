@@ -10,6 +10,7 @@ import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
 import { ComposeForm } from "../components/ComposeForm";
 import { Editor } from "../components/Editor";
 import { HistoryView } from "../components/HistoryView";
+import { configFreshness } from "../constants";
 import type { DraftEntry, Meta, User } from "../types";
 
 export type Flash = { text: string; cls?: "ok" | "error" } | null;
@@ -49,10 +50,14 @@ export function MainPage({ user, onLogout }: { user: User; onLogout: () => void 
     <>
       <header>
         <h1>ajt · AI 开票</h1>
-        <span className="sub">
-          {metaErr ||
-            (meta ? `项目 ${meta.projectKey} · 父级候选缓存于 ${new Date(meta.issuesFetchedAt).toLocaleString()}` : "加载中…")}
-        </span>
+        {meta ? (
+          // 悬停给出三份数据各自的确切时间（分叉时才需要细看）
+          <span className="sub" title={configFreshness(meta).detail}>
+            项目 {meta.projectKey} · {configFreshness(meta).text}
+          </span>
+        ) : (
+          <span className="sub">{metaErr || "加载中…"}</span>
+        )}
         <nav>
           <button className={tab === "create" ? "active" : ""} onClick={() => setTab("create")}>
             开票

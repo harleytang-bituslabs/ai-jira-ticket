@@ -118,15 +118,21 @@ export async function writeUsersCache(dir: string, cache: UsersCache): Promise<v
   await atomicWrite(join(dir, USERS_FILE), JSON.stringify(cache, null, 2) + "\n");
 }
 
-/** Assignee roster for the web form: cached Jira users with a visible email. Empty when no cache yet. */
-export async function readRoster(dir: string): Promise<Array<{ name: string; email: string }>> {
+/**
+ * Assignee roster for the web form: cached Jira users with a visible email.
+ * Returns an empty list (and null timestamp) when the cache doesn't exist yet.
+ */
+export async function readRoster(dir: string): Promise<{ fetchedAt: string | null; members: Array<{ name: string; email: string }> }> {
   try {
     const doc = JSON.parse(await readFile(join(dir, USERS_FILE), "utf-8")) as UsersCache;
-    return doc.users
-      .filter((u): u is { accountId: string; displayName: string; email: string } => Boolean(u.email))
-      .map((u) => ({ name: u.displayName, email: u.email }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return {
+      fetchedAt: doc.fetchedAt ?? null,
+      members: doc.users
+        .filter((u): u is { accountId: string; displayName: string; email: string } => Boolean(u.email))
+        .map((u) => ({ name: u.displayName, email: u.email }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
   } catch {
-    return [];
+    return { fetchedAt: null, members: [] };
   }
 }

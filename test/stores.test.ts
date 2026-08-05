@@ -93,6 +93,20 @@ describe("FsDraftStore", () => {
     await expect(store.read(A, "../secrets")).rejects.toThrow(/非法/);
   });
 
+  it("updates in place when an id is passed, even if the summary changed", async () => {
+    const first = await store.write(A, mkDraft("2026-07-01T08:00:00.000Z", "[E] 原标题"));
+    const renamed = mkDraft("2026-07-01T08:00:00.000Z", "[E] 改过的标题");
+
+    const again = await store.write(A, renamed, first.id); // 沿用 id
+    expect(again.id).toBe(first.id);
+    expect((await store.list(A)).length).toBe(1); // 关键:没有多出一条
+    expect((await store.read(A, first.id)).tickets[0]!.summary).toBe("[E] 改过的标题");
+
+    const derived = await store.write(A, renamed); // 不传 id = 新建,才允许换名
+    expect(derived.id).not.toBe(first.id);
+    expect((await store.list(A)).length).toBe(2);
+  });
+
   it("accepts a plain username as owner (内建 admin 账号不用邮箱)", async () => {
     expect(() => assertOwner("admin")).not.toThrow();
     const saved = await store.write("admin", mkDraft("2026-08-01T00:00:00.000Z"));

@@ -54,7 +54,13 @@ AJT_ADMIN_EMAIL=you@company.com AJT_ADMIN_PASSWORD=changeme8 npm run web
 - **管理**（admin）：添加用户（邮箱=登录名、初始密码线下告知、级别、可选 Jira 邮箱）、改级别、停用（会话 30 秒内失效）、重置密码。防呆：最后一个活跃管理员不可被降级/停用。
 - **更新config** 按钮：一键重拉 Confluence 规范 + Jira 看板快照 + 全员名册。**新环境首次登录后先点一次**。
 
-## 部署（Docker / AWS CodeBuild）
+## 部署（AWS App Runner，推 main 自动上线）
+
+生产形态：GitHub `main` 有新提交 → App Runner 自动构建 → 滚动部署 → HTTPS 网址直接可用。配置在 [`apprunner.yaml`](apprunner.yaml)，控制台操作清单、IAM 策略、密钥放置见 **[docs/deploy-apprunner.md](docs/deploy-apprunner.md)**。
+
+要点：`AJT_S3_BUCKET` 必开（容器磁盘易失）· 密钥走 Secrets Manager · `SESSION_SECRET` 必须跨部署稳定 · Auto scaling **Max size = 1**（限速与用户缓存在内存里）· 健康检查指向 `/healthz`。
+
+## 备用路线：Docker / AWS CodeBuild（ECS）
 
 ```bash
 # 本机验证镜像
@@ -68,11 +74,13 @@ docker run --rm -p 9300:9300 --env-file .env \
 
 CodeBuild 用根目录 `buildspec.yml`：typecheck + 测试 → `docker build` → 推 ECR（`$ECR_REPO` 环境变量指定仓库，commit 短 hash + latest 双标签）→ 产出 `imagedefinitions.json` 供 ECS 流水线。环境需勾选 Privileged。
 
-生产要点：
+这条路线适合日后需要多实例、精细网络控制时（ECS Fargate + ALB）；App Runner 上线后它保持可用但不参与日常发版。
+
+生产要点（两条路线通用）：
 
 - **S3 模式必开**（`AJT_S3_BUCKET`）——容器磁盘是易失的；fs 模式仅限本地开发
-- `.cache/` 在镜像里是空的：首启后管理员登录点一次「更新config」即可（或把三个 fetch 脚本跑进启动流程）
-- **HTTPS 前密码走明文**：域名 + ACM + ALB 是下一阶段；在那之前只在内网使用，之后设 `AJT_COOKIE_SECURE=1`
+- `.cache/` 在镜像里是空的：**进程启动后自动拉取**（约 40 秒，失败不致命，管理员可点「更新config」重试）
+- 上 HTTPS 后设 `AJT_COOKIE_SECURE=1`（App Runner 自带 TLS，已在 `apprunner.yaml` 里设好）
 - 单实例假设（登录限速与用户缓存在内存里）；上多实例前需要外置
 
 ## CLI 版（个人本地模式，无登录/无 S3）

@@ -83,7 +83,8 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
     const disk = await store.read(owner, req.params.id);
     const merged = mergeDraftEdits(disk, incoming);
     enforcePolicy(req.user!, merged);
-    const saved = await store.write(owner, merged);
+    // 原地更新:id 必须沿用,否则改了标题就会多出一条记录
+    const saved = await store.write(owner, merged, req.params.id);
     res.json({ id: saved.id, draft: merged });
   });
 
@@ -99,7 +100,7 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
         config,
         meta,
         persist: async (d) => {
-          await store.write(owner, d);
+          await store.write(owner, d, id); // 断点续传的写回同样是原地更新
         },
       });
     } catch (err) {

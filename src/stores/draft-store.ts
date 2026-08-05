@@ -35,7 +35,11 @@ export interface DraftStore {
   /** Every user's drafts, newest first — the admin cross-user history view. */
   listAll(): Promise<DraftListEntry[]>;
   read(owner: string, id: string): Promise<DraftFile>;
-  write(owner: string, draft: DraftFile): Promise<{ id: string }>;
+  /**
+   * 新建时省略 id（从内容推导一个可读的名字）；更新已有记录必须把原 id 传进来 ——
+   * 推导名依赖首票标题，改标题再保存会算出新 id，等于凭空多一条记录、旧的还留着。
+   */
+  write(owner: string, draft: DraftFile, id?: string): Promise<{ id: string }>;
   delete(owner: string, id: string): Promise<void>;
 }
 
@@ -99,8 +103,8 @@ export class FsDraftStore implements DraftStore {
     return DraftFileSchema.parse(JSON.parse(raw));
   }
 
-  async write(owner: string, draft: DraftFile): Promise<{ id: string }> {
-    const id = draftBaseName(draft);
+  async write(owner: string, draft: DraftFile, id = draftBaseName(draft)): Promise<{ id: string }> {
+    assertDraftId(id);
     await mkdir(this.dir(owner), { recursive: true });
     await atomicWrite(join(this.dir(owner), `${id}.json`), JSON.stringify(draft, null, 2) + "\n");
     return { id };
@@ -186,8 +190,7 @@ export class S3DraftStore implements DraftStore {
     }
   }
 
-  async write(owner: string, draft: DraftFile): Promise<{ id: string }> {
-    const id = draftBaseName(draft);
+  async write(owner: string, draft: DraftFile, id = draftBaseName(draft)): Promise<{ id: string }> {
     await this.s3.send(
       new PutObjectCommand({
         Bucket: this.bucket,
