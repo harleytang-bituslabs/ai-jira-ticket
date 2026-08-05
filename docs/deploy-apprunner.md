@@ -15,24 +15,24 @@
 
 ## 步骤 1：把三个密钥放进 Secrets Manager
 
-区域用 **us-west-2**（和 S3 桶同区）。建议建成一个 secret、多个键值对，名字 `ajt/prod`：
+区域用 **us-west-2**（和 S3 桶同区）。建 **3 个独立的 secret**，类型选 "Other type of secret" → **Plaintext**（整个值就是那一串，不要包成 JSON——App Runner 注入的是 secret 的完整值，JSON 会被原样塞进环境变量）：
 
-```json
-{
-  "ATLASSIAN_EMAIL": "harley.tang@bituslabs.com",
-  "ATLASSIAN_API_TOKEN": "<Atlassian API token>",
-  "ANTHROPIC_API_KEY": "<Anthropic key>",
-  "SESSION_SECRET": "<64 位随机十六进制，见下>",
-  "AJT_ADMIN_EMAIL": "admin",
-  "AJT_ADMIN_PASSWORD": "<内建管理员初始密码>"
-}
-```
+| Secret 名 | 值 |
+|---|---|
+| `ajt/atlassian-api-token` | Atlassian API token |
+| `ajt/anthropic-api-key` | Anthropic API key |
+| `ajt/session-secret` | `openssl rand -hex 32` 的输出 |
 
-`SESSION_SECRET` 生成：`openssl rand -hex 32`。
+> `SESSION_SECRET` **必须跨部署稳定**：它变了所有人被登出。放这里就是为了让它固定——绝不要依赖进程随机生成。
 
-> **必须稳定**：它变了所有人被登出。放 Secrets Manager 就是为了让它跨部署不变——绝不要依赖进程随机生成。
->
-> `AJT_ADMIN_*` 只在用户表为空时生效。**S3 上的 `users.json` 已经有三个账号了**，所以这两个键其实不会触发；留着是为了万一将来换桶能自举。
+其余变量不是密钥，在服务配置里以**明文环境变量**填写即可（见步骤 2）：
+
+| 变量 | 值 |
+|---|---|
+| `ATLASSIAN_BASE_URL` | `https://bituslabs.atlassian.net` |
+| `ATLASSIAN_EMAIL` | 与上面 token 配对的账号邮箱 |
+
+`AJT_ADMIN_EMAIL` / `AJT_ADMIN_PASSWORD` **不必配**：它们只在用户表为空时种入管理员，而 S3 上的 `users.json` 已经有账号了。将来换新桶需要自举时再加。
 
 ## 步骤 2：建 App Runner 服务
 
@@ -44,7 +44,10 @@
 4. **Service settings**
    - Virtual CPU / Memory：**1 vCPU / 2 GB**（起草时要等 LLM 响应，2 GB 稳妥）
    - Port：**9300**（`apprunner.yaml` 里已声明，确认一致）
-   - **Environment variables → 从 Secrets Manager 引用**：把步骤 1 的六个键逐个加为 secret 引用（明文环境变量已在 `apprunner.yaml` 里，不用重复填）
+   - **Environment variables**：加 2 个明文（`ATLASSIAN_BASE_URL`、`ATLASSIAN_EMAIL`）
+   - **Environment secrets**：加 3 个引用，Name 用变量名、Value 填 secret 的 ARN：
+     `ATLASSIAN_API_TOKEN` / `ANTHROPIC_API_KEY` / `SESSION_SECRET`
+     （`AJT_*` 那几个已在 `apprunner.yaml` 里，**不要重复填，同名会冲突**）
    - **Auto scaling**：新建一个配置，**Max size = 1**
      > 为什么必须是 1：登录失败限速和用户表缓存都在内存里。多实例会让限速形同虚设、停用账号的生效延迟变长。要上多实例得先把这两处外置（Redis/DynamoDB）。
    - **Health check**：Path `/healthz`（免认证，专为此设计）
@@ -69,12 +72,18 @@ App Runner 的 **instance role**（不是 access role）需要这份最小权限
       "Effect": "Allow",
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::bituslabs-ai-jira-ticket"
+    },
+    {
+      "Sid": "ReadSecrets",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "arn:aws:secretsmanager:us-west-2:*:secret:ajt/*"
     }
   ]
 }
 ```
 
-`ListBucket` 是必须的——按人列历史和管理员的全员视图都靠它。读取 Secrets Manager 的权限由控制台在你添加 secret 引用时自动附加。
+`ListBucket` 是必须的——按人列历史和管理员的全员视图都靠它。`GetSecretValue` 也必须显式给：少了它服务会在启动时因读不到密钥而反复失败。
 
 ## 步骤 4：首次部署后的检查
 

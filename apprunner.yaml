@@ -18,7 +18,6 @@ build:
       - npm prune --omit=dev # 构建产物已生成，运行时不需要 vite/vitest/typescript
 
 run:
-  runtime-version: 22
   command: ./node_modules/.bin/tsx src/server/index.ts
   network:
     port: 9300
