@@ -4,7 +4,7 @@
  */
 
 import { useMemo } from "react";
-import { displayName, isSubmitted, orderedTypes } from "../constants";
+import { displayName, isSubmitted, orderedTypes, parentOptionLabel } from "../constants";
 import type { Meta, Ticket, User } from "../types";
 
 export function TicketCard({
@@ -33,9 +33,9 @@ export function TicketCard({
     const siblings = tickets
       .filter((s) => s.localId !== t.localId)
       .filter((s) => (t.issueType === "Sub-task" ? s.issueType !== "Sub-task" && s.issueType !== "Epic" : s.issueType === "Epic"))
-      .map((s) => ({ label: `本批 ${s.localId} · ${s.summary.slice(0, 40)}`, value: s.localId }));
+      .map((s) => ({ label: parentOptionLabel(`本批 ${s.localId}`, s.summary), value: s.localId }));
     const board = (t.issueType === "Sub-task" ? meta.standardParents : meta.epics).map((i) => ({
-      label: `${i.key} · ${i.summary.slice(0, 48)}`,
+      label: parentOptionLabel(i.key, i.summary),
       value: i.key,
     }));
     return [...siblings, ...board];
@@ -105,6 +105,7 @@ export function TicketCard({
         <select
           className={("parent " + bad("parent")).trim()}
           disabled={t.issueType === "Epic"}
+          title={parentOptions.find((o) => o.value === t.parent)?.label ?? "父级（必填）"}
           value={t.parent ?? ""}
           onChange={(e) => onChange({ parent: e.target.value || null })}
         >

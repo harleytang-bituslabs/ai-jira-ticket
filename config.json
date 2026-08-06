@@ -10,5 +10,6 @@
   "specPageUrls": ["https://bituslabs.atlassian.net/wiki/spaces/hub/pages/1093533697/JIRA?atlOrigin=eyJpIjoiMzcyZDY1MmRkMjBlNGE5OWFmNzQxMWIxOWIzNjRjNjkiLCJwIjoiY29uZmx1ZW5jZS1jaGF0cy1pbnQifQ"],
   "defaultPriority": "P2",
   "staticFields": {},
+  "startDateField": "customfield_10015",
   "language": "auto"
 }

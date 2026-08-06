@@ -2,6 +2,8 @@
 
 AI 开票助手：输入口语化的中/英文描述，按团队保存在 Confluence 上的开票规范，生成结构化 Jira 票据草稿，人工确认后提交到 Jira kanban board。
 
+> 接手开发请先读 **[HANDOFF.md](HANDOFF.md)**：当前进度、待办、已踩过的坑。
+
 2.0 起是**多用户 Web 服务**：邮箱+密码登录、两级职级+管理员、全员历史（admin）、提交确认防呆、草稿存 S3（每人一个文件夹）、Docker/CodeBuild 可部署。核心逻辑在 `src/core/`，与 HTTP 层解耦；CLI 保留为个人本地模式。
 
 ## 权限模型

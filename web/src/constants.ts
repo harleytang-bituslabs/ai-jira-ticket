@@ -28,6 +28,16 @@ export const LEVEL_LABELS: Record<UserLevel, string> = { l1: "普通", l2: "高�
 /** 开票表单进来时预选的类型（团队日常开的绝大多数是子任务）。 */
 export const DEFAULT_TYPE = "Sub-task";
 
+/**
+ * 父级下拉的选项文字。刻意几乎不截断：本项目的标题普遍带 [Epic][模块] 前缀，
+ * 区分度往往在四五十字之后（`[AI Model] [Standardized Infras Processing] …`
+ * 这样的前缀就占 44 字），截短会让不同的票看起来一模一样。
+ * 下拉弹层的宽度由浏览器按最长选项自动撑开，长文字不影响收起时的控件宽度；
+ * 这里的上限只是防个别异常长标题把弹层撑到离谱。
+ */
+export const parentOptionLabel = (prefix: string, summary: string): string =>
+  `${prefix} · ${summary.length > 120 ? summary.slice(0, 120) + "…" : summary}`;
+
 /** 本地时间 YYYY-MM-DD HH:mm —— 比 toLocaleString() 的 "8/4/2026, 4:59:01 PM" 好认。 */
 export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "—";

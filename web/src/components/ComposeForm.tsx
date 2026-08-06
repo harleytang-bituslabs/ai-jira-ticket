@@ -6,9 +6,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api, errMsg } from "../api";
-import { DEFAULT_TYPE, defaultPriority, orderedTypes, PRIORITY_COLORS, TYPE_COLORS } from "../constants";
+import { DEFAULT_TYPE, defaultPriority, orderedTypes, parentOptionLabel, PRIORITY_COLORS, TYPE_COLORS } from "../constants";
 import type { Flash } from "../pages/MainPage";
-import type { DraftEntry, DraftFile, Meta, User } from "../types";
+import type { DraftEntry, DraftFile, IssueRef, Meta, User } from "../types";
 import { Seg } from "./Seg";
 
 type Status = { text: string; cls?: "ok" | "error" };
@@ -79,6 +79,12 @@ export function ComposeForm({
     () => (parentEpic ? meta.standardParents.filter((i) => i.parent === parentEpic) : []),
     [meta, parentEpic],
   );
+
+  // 收起时控件宽度会把长标题裁掉，悬停给出完整的选中项
+  const titleOf = (pool: IssueRef[], key: string): string | undefined => {
+    const hit = pool.find((i) => i.key === key);
+    return hit ? parentOptionLabel(hit.key, hit.summary) : undefined;
+  };
 
   const bigRoster = meta.roster.length > 8;
   const pickAssigneeText = (text: string) => {
@@ -245,6 +251,7 @@ export function ComposeForm({
             {type === "Sub-task" && (
               <select
                 className={invalid.has("parentEpic") ? "invalid" : ""}
+                title={titleOf(meta.epics, parentEpic) ?? "先选 Epic"}
                 value={parentEpic}
                 onChange={(e) => {
                   setParentEpic(e.target.value);
@@ -254,13 +261,16 @@ export function ComposeForm({
               >
                 <option value="">Epic（先选）</option>
                 {meta.epics.map((i) => (
-                  <option key={i.key} value={i.key}>{`${i.key} · ${i.summary.slice(0, 40)}`}</option>
+                  <option key={i.key} value={i.key}>
+                    {parentOptionLabel(i.key, i.summary)}
+                  </option>
                 ))}
               </select>
             )}
             <select
               className={invalid.has("parent") ? "invalid" : ""}
               disabled={type === "Epic"}
+              title={titleOf(type === "Sub-task" ? subPool : meta.epics, parent) ?? "父级（必填）"}
               value={parent}
               onChange={(e) => {
                 setParent(e.target.value);
@@ -275,14 +285,18 @@ export function ComposeForm({
                     {parentEpic ? (subPool.length ? "选 Story/Task（必填）" : "该 Epic 下暂无 Story/Task") : "← 先选 Epic"}
                   </option>
                   {subPool.map((i) => (
-                    <option key={i.key} value={i.key}>{`${i.key} · ${i.summary.slice(0, 48)}`}</option>
+                    <option key={i.key} value={i.key}>
+                      {parentOptionLabel(i.key, i.summary)}
+                    </option>
                   ))}
                 </>
               ) : (
                 <>
                   <option value="">父级（必填）</option>
                   {meta.epics.map((i) => (
-                    <option key={i.key} value={i.key}>{`${i.key} · ${i.summary.slice(0, 48)}`}</option>
+                    <option key={i.key} value={i.key}>
+                      {parentOptionLabel(i.key, i.summary)}
+                    </option>
                   ))}
                 </>
               )}
