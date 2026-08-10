@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { api, errMsg } from "../api";
+import { api, errMsg, setSessionToken } from "../api";
 import type { User } from "../types";
 
 export function LoginPage({ onLogin }: { onLogin: (u: User) => void }) {
@@ -17,7 +17,8 @@ export function LoginPage({ onLogin }: { onLogin: (u: User) => void }) {
     setBusy(true);
     setErr("");
     try {
-      const d = await api<{ user: User }>("POST", "/api/login", { email: email.trim(), password });
+      const d = await api<{ user: User; token: string }>("POST", "/api/login", { email: email.trim(), password });
+      setSessionToken(d.token); // 存本标签页:另开标签页可登另一个账号
       onLogin(d.user);
     } catch (e) {
       setErr(errMsg(e));

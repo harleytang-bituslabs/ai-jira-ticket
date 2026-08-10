@@ -12,16 +12,18 @@ AI 开票助手：输入口语化的中/英文描述，按团队保存在 Conflu
 |---|---|---|---|
 | 可见 board | 管理员授权的 | 管理员授权的 | **全部**（恒定，不看 boards 字段） |
 | 开票类型 | 不允许 Epic | 全部 | 全部 |
-| 指派 | 强制=本人 | 任意（**该 board 的可指派名册**） | 任意 |
+| 指派 | 强制=本人 | **仅本团队**（team 相同的活跃账号；没设团队=仅本人） | 任意（该 board 的参与者名册） |
 | 历史 | 仅自己 | 仅自己（含指派筛选） | **全员**（所有者列/筛选） |
 | 他人记录 | — | — | 可查看、可删除（编辑/提交仍仅限自己的草稿） |
 | 用户管理 | — | — | 建号 / 定级 / 授权 board / 定团队 / 重置密码 / 停用 |
 
 权限由服务端中间件强制（`enforcePolicy` 在生成/保存/提交三条路径统一执行），前端只做隐藏。
 
-**board 可见性**：账号上的 `boards` 列表是唯一依据，**新账号默认为空 = 开不了票**，须由管理员在管理页勾选开通。账号另有一个 `team` 字段，纯展示标签，不参与任何权限判断。
+**board 可见性**：账号上的 `boards` 列表是唯一依据，**新账号默认为空 = 开不了票**，须由管理员在管理页勾选开通。账号的 `team` 字段决定 **l2 的派活范围**：只能指派给同团队的活跃账号（没设团队就只能派自己）。团队只存在于 ajt 账号上，所以 l2 派不了没建号的同事——要么给对方建号定团队，要么由 admin 来派。
 
-**指派名册**取自 Jira 的 `/rest/api/3/user/assignable/search?project=<KEY>`——即该项目真正能被指派的人，而不是全站用户，所以一个 board 的下拉框里不会出现无关同事。名册是缓存，服务端**刻意不**校验 assignee 是否在其中（新同事入职到下次「更新config」之间有窗口期，卡住会误伤）；真正的强制点在 Jira 建票时。
+**指派名册**取自该项目**历史票的 assignee 与 reporter**（即真正在这个 board 上干过活的人）。曾经试过 Jira 的 `assignable/search`，但本站的权限方案把「可指派」开给了全公司：实测 26 个项目各返回同一批 63 人，分不出项目。参与者则差异明显（AIP 22 人 · BOP 13 人 · FL 11 人，BOP 与 FL 只交集 1 人）。
+
+两个已知代价是刻意接受的：**从没被派过票的新人不在名册里**（所以指派框允许直接手输邮箱，且 `/api/meta` 总会把当前登录者并进名册），**离职/转岗的人会一直留着**（历史票不会消失）。服务端**刻意不**校验 assignee 是否在名册内——名册是缓存，卡在这里会误伤新人；真正的强制点在 Jira 建票时。
 
 ## 环境变量
 
@@ -31,13 +33,12 @@ AI 开票助手：输入口语化的中/英文描述，按团队保存在 Conflu
 | `ANTHROPIC_API_KEY` | ✅ | AI 起草用 |
 | `SESSION_SECRET` | 生产✅ | 会话 cookie 的 HMAC 密钥（≥32 随机字符）。不设则每次重启随机生成，所有人被登出 |
 | `AJT_ADMIN_EMAIL` / `AJT_ADMIN_PASSWORD` | 首启✅ | 用户表为空时种入第一个管理员，之后无作用（`AJT_ADMIN_NAME` 可选，默认取邮箱前缀） |
-| `AJT_S3_BUCKET` | | 设了走 S3 存储（草稿 `drafts/{email}/` + 用户表 `users.json`）；不设用本地 fs（开发模式）。凭证走标准 AWS 链（实例角色 / env） |
+| `AJT_S3_BUCKET` | | 设了走 S3 存储（草稿 `drafts/{email}/` + 用户表 `users.json` + 共享参考数据 `cache/`）；不设用本地 fs（开发模式）。凭证走标准 AWS 链（实例角色 / env） |
 | `AJT_HOST` / `AJT_PORT` | | 默认 `127.0.0.1:9300`；容器/对外部署设 `AJT_HOST=0.0.0.0` |
-| `AJT_COOKIE_SECURE` | | 上 HTTPS 后设 `1`（cookie 加 Secure 标记） |
 | `AJT_MODEL` | | 覆盖起草模型（默认见 `src/llm/client.ts`） |
 | `AJT_CONFIG` | | 指向另一份 config.json（默认 `./config.json`） |
 
-`config.json`（入库共享，无密钥）：`projectKey` / `specPageUrls`（Confluence 规范页，可多篇）/ `defaultPriority` / `staticFields`（必填自定义字段逃生门）/ `language`（zh / en / auto）/ `teamMembers`（指派名册的兜底静态名单，拉过 Jira 全员缓存后即被替代）。
+`config.json`（入库共享，无密钥）：`projectKey` / `specPageUrls`（Confluence 规范页，可多篇）/ `defaultPriority` / `staticFields`（必填自定义字段逃生门）/ `language`（zh / en / auto）/ `teamMembers`（指派名册的兜底静态名单，拉过参与者缓存后即被替代）。
 
 ## 本地开发
 
@@ -58,8 +59,8 @@ AJT_ADMIN_EMAIL=you@company.com AJT_ADMIN_PASSWORD=changeme8 npm run web
 
 - **开票**：选优先级/类型/父级/指派/截止（说在话里的信息 AI 也会捕捉）→ 口语描述 → 选拆票方式（AI 自行决定 / 不拆 / 指定 N 张）→ AI 拆出可编辑卡片 → 微调 → 提交（弹窗确认每张票后才上板，先父后子，每张给链接）。Sub-task 父级两级联动（先选 Epic）。
 - **历史**：历史即草稿档案。筛选：时间起止 / 父级 / 指派 / 提交状态（admin 另有所有者筛选）。没提完的「继续编辑」断点续传；「删除」「清理已完结」只删档案，**绝不影响 Jira 上已建的票**。
-- **管理**（admin）：添加用户（邮箱=登录名、初始密码线下告知、级别、可选 Jira 邮箱）、改级别、停用（会话 30 秒内失效）、重置密码。防呆：最后一个活跃管理员不可被降级/停用。
-- **更新config** 按钮：一键重拉 Confluence 规范 + Jira 看板快照 + 全员名册。**新环境首次登录后先点一次**。
+- **管理**（admin）：添加用户（工作邮箱=登录名=Jira 身份、初始密码线下告知、级别、团队、可见 board）、改级别、改团队、增删可见 board、停用（会话 30 秒内失效）、重置密码。填完邮箱会**按 Jira 参与记录自动预勾可见 board**，也可手动改；已有账号有「识别 board」按钮做同样的事。防呆：最后一个活跃管理员不可被降级/停用。
+- **更新config** 按钮：一键重拉 Confluence 规范 + Jira 项目元数据 + 看板快照 + 参与者名册，四份一起刷，结果写进全员共享的缓存。**新环境首次登录后先点一次**。
 
 ## 部署（AWS App Runner，推 main 自动上线）
 
@@ -86,8 +87,7 @@ CodeBuild 用根目录 `buildspec.yml`：typecheck + 测试 → `docker build` �
 生产要点（两条路线通用）：
 
 - **S3 模式必开**（`AJT_S3_BUCKET`）——容器磁盘是易失的；fs 模式仅限本地开发
-- `.cache/` 在镜像里是空的：**进程启动后自动拉取**（约 40 秒，失败不致命，管理员可点「更新config」重试）
-- 上 HTTPS 后设 `AJT_COOKIE_SECURE=1`（App Runner 自带 TLS，已在 `apprunner.yaml` 里设好）
+- 参考数据（规范/看板/名册）在 S3 模式下存 `cache/` 前缀，**全员共用一份、不按人隔离**：容器启动即可用上一次「更新config」的结果，不必再等几十秒重拉。桶里也空时才自动拉一次（失败不致命，管理员点「更新config」重试）。进程内有 60 秒 TTL 的读缓存，所以别指望多实例之间秒级同步
 - 单实例假设（登录限速与用户缓存在内存里）；上多实例前需要外置
 
 ## CLI 版（个人本地模式，无登录/无 S3）
@@ -115,6 +115,7 @@ src/
 ├── llm/client.ts     Anthropic 结构化输出（messages.parse + zod + prompt cache）
 ├── core/             纯库层: config / schema / spec-cache / sync-spec / draft / submit / render
 ├── stores/           持久层: DraftStore(fs / S3, 每人一夹) + UserStore(users.json, 30s 缓存)
+│                     + CacheStore(fs / S3 的 cache/ 前缀, 全员共享, 60s 读缓存)
 ├── server/
 │   ├── index.ts      bootstrap: store 选择(S3/fs)、种管理员、listen
 │   ├── app.ts        Express 组装: 静态托管 web/dist + 中间件链 + 路由挂载
@@ -128,6 +129,6 @@ web/                  React 18 + Vite + TS 前端（pages/ + components/，构�
 
 关键设计：
 
-- **无状态会话**：cookie 只装身份（email+exp 的 HMAC），级别/停用状态每个请求从用户表现读——容器重启/多实例天然兼容，停用 30 秒内生效
-- **规范静态缓存**：draft 读 `.cache/`，system prompt 字节稳定（Anthropic prompt cache 跨请求命中省钱）
+- **无状态会话**：登录发 HMAC 签名的 token（email+exp），存各标签页的 sessionStorage、走 Authorization 头——**一台电脑可同时登多个账号**（每个标签页一个）。刻意不用 cookie（cookie 全浏览器共享，最后登录的账号会接管其他标签页）。级别/停用状态每个请求从用户表现读，停用 30 秒内生效；容器重启/多实例天然兼容。代价：新标签页/重开浏览器需重新登录，token 对页面脚本可读（内部工具可接受）
+- **规范静态缓存**：draft 从 `CacheStore` 读规范，system prompt 字节稳定（Anthropic prompt cache 跨请求命中省钱）
 - **草稿即历史**：`drafts/*.json` 是唯一真相源，submit 写回 Jira key，重跑幂等

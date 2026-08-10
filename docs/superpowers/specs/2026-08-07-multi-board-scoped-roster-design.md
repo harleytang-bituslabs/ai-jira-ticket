@@ -17,7 +17,7 @@
 |---|---|---|
 | 开票规范组织 | **全公司一套统一规范** | `spec.md` 保持单份，prompt cache 与 system prompt 完全不受影响 |
 | board 名册来源 | **Jira `/rest/api/3/user/assignable/search?project=KEY`** | Jira 本身就知道谁能被指派到该项目，权威、零维护、人员变动自动跟随 |
-| 「所属团队」语义 | **纯展示标签**，不参与权限 | 权限全部由「可见 board」决定，`enforcePolicy` 的规则表保持短 |
+| 「所属团队」语义 | ~~纯展示标签~~ → **2026-08-10 修订：l2 的派活范围 = 本团队** | 起初纯展示；后按 Harley 要求升级为权限依据（policy.ts `teamRoster`） |
 | 多 board 切换形态 | **页面顶部全局切换器** | 开票与历史同时受控；只有一个可见 board 时自动隐藏，现有用户无感 |
 | board 清单维护 | **`config.json` 的 `boards` 数组** | 与现有 config 分层一致（入库、无密钥、有 git 记录）；board 极少变动 |
 | 老账号默认可见范围 | **空 = 什么都看不到** | 符合「不显示闲杂人等」的初衷；当前是开发版，运营摩擦可接受 |

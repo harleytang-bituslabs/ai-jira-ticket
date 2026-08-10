@@ -197,6 +197,32 @@ export async function searchIssues(jql: string): Promise<JiraIssueSummary[]> {
   return issues;
 }
 
+// ─── Project list ───────────────────────────────────────────────────────────
+
+export interface JiraProject {
+  key: string;
+  name: string;
+}
+
+/** Every project the token can see — the candidate list for board grants. */
+export async function listProjects(): Promise<JiraProject[]> {
+  const projects: JiraProject[] = [];
+  const pageSize = 50;
+  for (let startAt = 0; ; ) {
+    const res = (await jiraFetch(`/rest/api/3/project/search?startAt=${startAt}&maxResults=${pageSize}`)) as {
+      values?: Array<{ key?: string; name?: string }>;
+      isLast?: boolean;
+    };
+    const page = res.values ?? [];
+    for (const p of page) {
+      if (p.key) projects.push({ key: p.key, name: p.name ?? p.key });
+    }
+    if (res.isLast !== false || !page.length) break;
+    startAt += page.length;
+  }
+  return projects;
+}
+
 // ─── User roster ────────────────────────────────────────────────────────────
 
 export interface JiraUser {
@@ -206,41 +232,59 @@ export interface JiraUser {
   email: string | null;
 }
 
+/** A Jira user object as it appears embedded in an issue's fields. */
+interface RawPerson {
+  accountId?: string;
+  accountType?: string;
+  displayName?: string;
+  emailAddress?: string;
+  active?: boolean;
+}
+
 /**
- * The people who can actually be assigned work on one project — deactivated
- * accounts, apps/bots and JSM customers filtered out.
+ * The people who have actually worked in one project — every distinct
+ * assignee or reporter across its issue history.
  *
- * Deliberately NOT /users/search: that returns every account on the site
- * regardless of project, which is what used to put the whole company in one
- * board's assignee picker. Jira already knows who belongs to a project, so
- * the scoping question is answered there rather than mirrored by us.
+ * The obvious alternative, /user/assignable/search, asks Jira who *may* be
+ * assigned. On a site whose permission scheme grants "Assignable User" broadly
+ * that returns the entire company and distinguishes nothing between projects
+ * (measured on ours: 63 identical accounts across all 26). Participation, by
+ * contrast, differs sharply per project.
+ *
+ * Two consequences worth knowing: somebody who has never been given a ticket
+ * here is absent (the picker accepts a typed-in email for exactly that case),
+ * and people who have moved on stay until someone decides to age them out.
  */
-export async function listAssignableUsers(projectKey: string): Promise<JiraUser[]> {
-  const users: JiraUser[] = [];
-  const pageSize = 200;
-  const project = encodeURIComponent(projectKey);
-  for (let startAt = 0; ; startAt += pageSize) {
-    const page = (await jiraFetch(
-      `/rest/api/3/user/assignable/search?project=${project}&startAt=${startAt}&maxResults=${pageSize}`,
-    )) as Array<{
-      accountId: string;
-      accountType?: string;
-      displayName?: string;
-      emailAddress?: string;
-      active?: boolean;
-    }>;
-    if (!page?.length) break;
-    for (const u of page) {
-      if (u.accountType !== "atlassian" || !u.active) continue;
-      users.push({
-        accountId: u.accountId,
-        displayName: u.displayName ?? "",
-        email: u.emailAddress ?? null,
-      });
+export async function listProjectParticipants(projectKey: string): Promise<JiraUser[]> {
+  const byAccount = new Map<string, JiraUser>();
+  let pageToken: string | undefined;
+  do {
+    // 只取两个人员字段 —— 整份 issue 在这里是纯浪费
+    const params = new URLSearchParams({
+      jql: `project = "${projectKey}"`,
+      maxResults: "100",
+      fields: "assignee,reporter",
+    });
+    if (pageToken) params.set("nextPageToken", pageToken);
+    const res = (await jiraFetch(`/rest/api/3/search/jql?${params.toString()}`)) as {
+      issues?: Array<{ fields?: { assignee?: RawPerson | null; reporter?: RawPerson | null } }>;
+      nextPageToken?: string;
+    };
+    for (const it of res.issues ?? []) {
+      for (const p of [it.fields?.assignee, it.fields?.reporter]) {
+        if (!p?.accountId) continue;
+        if (p.accountType !== "atlassian" || !p.active) continue;
+        if (byAccount.has(p.accountId)) continue;
+        byAccount.set(p.accountId, {
+          accountId: p.accountId,
+          displayName: p.displayName ?? "",
+          email: p.emailAddress ?? null,
+        });
+      }
     }
-    if (page.length < pageSize) break;
-  }
-  return users;
+    pageToken = res.nextPageToken;
+  } while (pageToken);
+  return [...byAccount.values()];
 }
 
 // ─── User lookup ────────────────────────────────────────────────────────────

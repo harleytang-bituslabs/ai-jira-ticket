@@ -10,8 +10,10 @@ import type { ResolvedConfig } from "../../core/config.js";
 import { draftTickets } from "../../core/draft.js";
 import { DraftFileSchema, type DraftFile } from "../../core/schema.js";
 import { readProjectMeta } from "../../core/spec-cache.js";
+import type { CacheStore } from "../../stores/cache-store.js";
 import { submitDraft } from "../../core/submit.js";
 import type { DraftStore } from "../../stores/draft-store.js";
+import type { UserStore } from "../../stores/user-store.js";
 import { HttpError } from "../middlewares/error.js";
 import {
   applyComposeDefaults,
@@ -20,9 +22,9 @@ import {
   parseComposeDefaults,
   str,
 } from "../services/drafts.js";
-import { assertBoardVisible, enforcePolicy, jiraIdentity } from "../services/policy.js";
+import { assertAssigneeAllowed, assertBoardVisible, enforcePolicy, jiraIdentity } from "../services/policy.js";
 
-export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router {
+export function draftsRoutes(config: ResolvedConfig, store: DraftStore, cache: CacheStore, users: UserStore): Router {
   const router = Router();
 
   /** 口语输入 + 表单字段 → AI 生成草稿并写入本人文件夹。 */
@@ -39,20 +41,23 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
     const user = req.user!;
     assertBoardVisible(user, config.projectKey); // 越权的话连 LLM 都不必调
     const defaults = parseComposeDefaults((body.defaults ?? {}) as Record<string, unknown>);
-    // L1 的表单值在进入 AI 之前就矫正:类型不许 Epic,指派锁定本人(生成的内容才对得上人)
+    // 表单值在进入 AI 之前就矫正/校验:L1 锁定本人,L2 圈在本团队(生成的内容才对得上人)
     if (user.level === "l1") {
       if (defaults.issueType === "Epic") throw new HttpError(403, "低级账号不能创建 Epic 类型的票");
       defaults.assignee = jiraIdentity(user);
+    } else {
+      await assertAssigneeAllowed(user, defaults.assignee ?? null, users);
     }
-    const fieldDirectives = await buildFieldDirectives(config, defaults);
+    const fieldDirectives = await buildFieldDirectives(config, cache, defaults);
 
     const draft = await draftTickets(input, {
       config,
+      cache,
       ...(splitCount != null ? { splitCount } : {}),
       ...(fieldDirectives ? { fieldDirectives } : {}),
     });
     applyComposeDefaults(draft, defaults);
-    enforcePolicy(user, draft); // 兜底:AI 产物同样不许越权
+    await enforcePolicy(user, draft, users); // 兜底:AI 产物同样不许越权
 
     const saved = await store.write(user.email, draft);
     res.json({ id: saved.id, draft });
@@ -83,7 +88,7 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
     const incoming = DraftFileSchema.parse((req.body as { draft?: unknown }).draft);
     const disk = await store.read(owner, req.params.id);
     const merged = mergeDraftEdits(disk, incoming);
-    enforcePolicy(req.user!, merged);
+    await enforcePolicy(req.user!, merged, users);
     // 原地更新:id 必须沿用,否则改了标题就会多出一条记录
     const saved = await store.write(owner, merged, req.params.id);
     res.json({ id: saved.id, draft: merged });
@@ -93,8 +98,8 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
     const owner = req.user!.email;
     const id = req.params.id;
     const draft = await store.read(owner, id);
-    enforcePolicy(req.user!, draft); // 手改存储绕过 PUT 的兜底
-    const meta = await readProjectMeta(config.cacheDir);
+    await enforcePolicy(req.user!, draft, users); // 手改存储绕过 PUT 的兜底
+    const meta = await readProjectMeta(cache);
     let result: DraftFile;
     try {
       result = await submitDraft(draft, {

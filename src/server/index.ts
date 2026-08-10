@@ -2,8 +2,12 @@
  * ajt web — bootstrap only. App assembly lives in app.ts, HTTP handlers in
  * routes/, business helpers in services/, persistence in ../stores/.
  *
- * Storage backend: AJT_S3_BUCKET set → S3 (drafts + user directory in one
- * bucket, per-user folders); otherwise local fs for development.
+ * Storage backend: AJT_S3_BUCKET set → S3 (drafts in per-user folders, the
+ * user directory as one document, and the shared reference cache under one
+ * flat prefix); otherwise local fs for development.
+ *
+ * The shared cache is why a container no longer waits ~40s on Atlassian at
+ * boot: whatever an admin last refreshed is already sitting in the bucket.
  *
  * Binds to 127.0.0.1 by default — set AJT_HOST=0.0.0.0 to expose.
  */
@@ -11,6 +15,7 @@
 import { randomBytes } from "node:crypto";
 import dotenv from "dotenv";
 import { loadConfig } from "../core/config.js";
+import { FsCacheStore, S3CacheStore, type CacheStore } from "../stores/cache-store.js";
 import { FsDraftStore, S3DraftStore, type DraftStore } from "../stores/draft-store.js";
 import { FsUserStore, S3UserStore, type UserStore } from "../stores/user-store.js";
 import { buildApp } from "./app.js";
@@ -27,6 +32,8 @@ const config = await loadConfig(process.env.AJT_CONFIG ?? "config.json");
 const bucket = process.env.AJT_S3_BUCKET?.trim();
 const drafts: DraftStore = bucket ? new S3DraftStore(bucket) : new FsDraftStore(config.draftsDir);
 const users: UserStore = bucket ? new S3UserStore(bucket) : new FsUserStore("data/users.json");
+// 参考数据全员共用一份:S3 上是平铺的 cache/ 前缀,不按人隔离
+const cache: CacheStore = bucket ? new S3CacheStore(bucket) : new FsCacheStore(config.cacheDir);
 
 const sessionSecret =
   process.env.SESSION_SECRET ??
@@ -37,7 +44,7 @@ const sessionSecret =
 
 await bootstrapAdmin(users);
 
-const app = buildApp(config, { drafts, users, sessionSecret });
+const app = buildApp(config, { drafts, users, cache, sessionSecret });
 
 app.listen(PORT, HOST, () => {
   console.log(`ajt web 已启动: http://${HOST}:${PORT}  (项目 ${config.projectKey} · 存储 ${bucket ? `S3:${bucket}` : "本地文件"})`);
@@ -46,5 +53,5 @@ app.listen(PORT, HOST, () => {
   }
   // 先监听、后拉缓存：容器平台的健康检查等不了首启那几十秒（等不到 /healthz 就判部署失败）。
   // 这几十秒里 /api/meta 会报错，拉完即自愈。
-  void ensureCaches(config);
+  void ensureCaches(config, cache);
 });

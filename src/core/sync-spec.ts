@@ -9,6 +9,7 @@
 import { fetchPageMarkdown } from "../clients/confluence-client.js";
 import { getProjectMeta, type ProjectMeta } from "../clients/jira-client.js";
 import type { ResolvedConfig } from "./config.js";
+import type { CacheStore } from "../stores/cache-store.js";
 import { writeProjectMeta, writeSpecCache, type SpecCache } from "./spec-cache.js";
 
 export interface SyncResult {
@@ -18,6 +19,7 @@ export interface SyncResult {
 
 export async function syncSpec(
   config: ResolvedConfig,
+  cache: CacheStore,
   onProgress?: (message: string) => void,
 ): Promise<SyncResult> {
   const send = onProgress ?? (() => {});
@@ -41,7 +43,7 @@ export async function syncSpec(
     sources: pages.map((p) => ({ url: p.url, title: p.title, version: p.version })),
     syncedAt: new Date().toISOString(),
   };
-  await writeSpecCache(config.cacheDir, spec);
-  await writeProjectMeta(config.cacheDir, meta);
+  await writeSpecCache(cache, spec);
+  await writeProjectMeta(cache, meta);
   return { spec, meta };
 }

@@ -7,6 +7,8 @@
 
 import { Router } from "express";
 import type { ResolvedConfig } from "../../core/config.js";
+import { readProjectsCache, readRoster } from "../../core/spec-cache.js";
+import type { CacheStore } from "../../stores/cache-store.js";
 import { ACCOUNT_ID_RE, TEAMS, USER_LEVELS, type Team, type UserLevel, type UserRecord, type UserStore } from "../../stores/user-store.js";
 import { HttpError } from "../middlewares/error.js";
 import { hashPassword } from "../session.js";
@@ -34,23 +36,59 @@ const parseTeam = (v: unknown): Team | undefined => {
   return t as Team;
 };
 
-export function adminRoutes(config: ResolvedConfig, users: UserStore): Router {
+export function adminRoutes(config: ResolvedConfig, users: UserStore, cache: CacheStore): Router {
   const router = Router();
 
-  /** 只接受已接入的 board —— 拼错的 key 会变成一个谁也进不去的隐形权限。 */
-  const parseBoards = (v: unknown): string[] => {
+  /**
+   * 授权候选 = 全公司 board 清单（「更新config」拉的 projects.json），已接入的
+   * 永远兜底在内。可以授权还没接入的 board —— 那只是前瞻记录，开票要等接入；
+   * 但清单外的 key 一律拒：拼错的 key 会变成一个谁也进不去的隐形权限。
+   */
+  const knownBoards = async (): Promise<Map<string, string>> => {
+    const m = new Map<string, string>();
+    m.set(config.projectKey, config.projectKey);
+    for (const p of (await readProjectsCache(cache)).projects) m.set(p.key, p.name);
+    return m;
+  };
+
+  const parseBoards = async (v: unknown): Promise<string[]> => {
     if (!Array.isArray(v) || v.some((b) => typeof b !== "string")) {
       throw new HttpError(400, "boards 须为字符串数组");
     }
-    const known = [config.projectKey];
+    const known = await knownBoards();
     for (const b of v as string[]) {
-      if (!known.includes(b)) throw new HttpError(400, `未接入的 board: ${b}（可选: ${known.join("/")}）`);
+      if (!known.has(b)) throw new HttpError(400, `未知的 board: ${b}——点「更新config」刷新公司 board 清单后再试`);
     }
     return [...new Set(v as string[])];
   };
 
   router.get("/users", async (_req, res) => {
     res.json({ users: (await users.all()).map(adminView) });
+  });
+
+  /** 管理页「可见 board」下拉的候选：全公司 board，已接入的排最前，其余按 key。 */
+  router.get("/boards", async (_req, res) => {
+    const known = await knownBoards();
+    const connected = [config.projectKey];
+    const rest = [...known.keys()].filter((k) => !connected.includes(k)).sort();
+    res.json({ boards: [...connected, ...rest].map((key) => ({ key, name: known.get(key) ?? key })) });
+  });
+
+  /**
+   * 一个邮箱在哪些已接入 board 里有参与记录 —— 建号时据此预勾可见 board,
+   * 免得管理员靠记忆猜。判据是该 board 的参与者名册(「更新config」拉的那份)。
+   *
+   * 识别只是建议:返回空不代表这人不该有权限,管理员仍可手动勾任意 board。
+   */
+  router.get("/participation", async (req, res) => {
+    const email = typeof req.query.email === "string" ? req.query.email.trim().toLowerCase() : "";
+    if (!email) throw new HttpError(400, "email 不能为空");
+    const boards: string[] = [];
+    for (const key of [config.projectKey]) {
+      const roster = await readRoster(cache);
+      if (roster.members.some((m) => m.email.toLowerCase() === email)) boards.push(key);
+    }
+    res.json({ boards });
   });
 
   router.post("/users", async (req, res) => {
@@ -70,7 +108,7 @@ export function adminRoutes(config: ResolvedConfig, users: UserStore): Router {
       name,
       level: body.level,
       // 不给就是空 —— 新账号默认什么 board 都看不到,由管理员显式开通
-      boards: body.boards === undefined ? [] : parseBoards(body.boards),
+      boards: body.boards === undefined ? [] : await parseBoards(body.boards),
       ...(team ? { team } : {}),
       scrypt: await hashPassword(password),
       active: true,
@@ -100,7 +138,7 @@ export function adminRoutes(config: ResolvedConfig, users: UserStore): Router {
       next.name = body.name.trim();
     }
     if (body.boards !== undefined) {
-      next.boards = parseBoards(body.boards);
+      next.boards = await parseBoards(body.boards);
     }
     if (body.team !== undefined) {
       const t = parseTeam(body.team);

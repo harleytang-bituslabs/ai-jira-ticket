@@ -2,9 +2,15 @@
 
 :root { --line:#d9dce3; --muted:#6b7280; --accent:#1d4ed8; --bg:#f5f6f8; --green:#047857; --green-bg:#ecfdf5; }
 * { box-sizing: border-box; }
+/* 永远预留滚动条位置:不然短页面(历史/管理没几条记录时)没有滚动条,
+   视口比长页面宽约 15px,width:80% 的内容随之变宽挪位,切 tab 会跳。 */
+html { scrollbar-gutter: stable; }
+@supports not (scrollbar-gutter: stable) {
+  html { overflow-y: scroll; }
+}
 body { margin:0; background:var(--bg); color:#16181d; font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
 
-header { display:flex; align-items:center; gap:16px; width:80%; margin:0 auto; padding:18px 0 0; }
+header { display:flex; align-items:center; gap:16px; row-gap:2px; flex-wrap:wrap; width:80%; margin:0 auto; padding:18px 0 0; }
 header h1 { font-size:20px; margin:0; white-space:nowrap; }
 header .sub { color:var(--muted); font-size:13px; flex:1; }
 nav { white-space:nowrap; }
@@ -16,6 +22,10 @@ nav button.active { color:var(--accent); border-bottom-color:var(--accent); font
 .userbox button:hover { color:var(--accent); }
 
 main { width:80%; margin:0 auto; padding:8px 0 56px; }
+/* 窄窗口:80% 会挤到没法用,放宽到全宽减边距 */
+@media (max-width: 860px) {
+  header, main { width:auto; margin:0 14px; }
+}
 .card { background:#fff; border:1px solid var(--line); border-radius:10px; padding:18px; margin-top:14px; }
 label { display:block; font-size:13px; color:var(--muted); margin:12px 0 5px; }
 .card > label:first-child { margin-top:0; }
@@ -144,15 +154,48 @@ button:disabled { opacity:.5; cursor:wait; }
 .modal input { width:100%; }
 
 /* 管理面板 */
-.utable { width:100%; border-collapse:collapse; font-size:13px; margin-top:8px; }
+.tableWrap { overflow-x:auto; }
+.utable { width:100%; min-width:760px; border-collapse:collapse; font-size:13px; margin-top:8px; }
 .utable th, .utable td { text-align:left; padding:9px 10px; border-bottom:1px solid #f0f1f4; }
 .utable th { color:var(--muted); font-weight:600; font-size:12px; }
 .utable select { font-size:13px; padding:5px 7px; }
 .utable .off { color:#b91c1c; }
 .utable .rowBtns { display:flex; gap:8px; white-space:nowrap; }
 .utable .rowBtns button { padding:5px 10px; font-size:13px; }
-.boardPick { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-.boardOpt { display:inline-flex; align-items:center; gap:4px; font-size:13px; white-space:nowrap; }
-.boardOpt input { margin:0; }
+/* 建号表单一整行放得下:各字段给不同的伸缩预算,邮箱吃掉剩余空间,
+   「添加用户」永远跟在最后而不是被挤到第二行。放不下才换行。 */
+/* 每个字段都按内容比例伸展,整行两头占满;窄了先缩到 basis 再换行 */
+.addUser .fgroup { min-width:0; }
+.addUser .fgroup input, .addUser .fgroup select { width:100%; min-width:0; }
+.addUser .fEmail  { flex:3 1 200px; }
+.addUser .fName   { flex:2 1 100px; }
+.addUser .fPass   { flex:2 1 130px; }
+.addUser .fLevel  { flex:1 1 90px; }
+.addUser .fTeam   { flex:1 1 90px; }
+.addUser .fBoards { flex:2 1 150px; }
+.addUser > button { flex:0 0 auto; }
+
+/* 可见 board 的多选下拉:合起来只占一个控件宽,展开后勾选。
+   管理页的原生 select 与它共用同一个箭头 —— 三个下拉长一个样。 */
+.addUser select, .utable select, .bpickBtn { appearance:none; -webkit-appearance:none;
+  background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236b7280' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 9px center; background-color:#fff; padding-right:26px; }
+.bpick { position:relative; }
+.bpickBtn { display:block; width:100%; font:inherit; font-size:14px; padding:8px 26px 8px 9px;
+  border:1px solid var(--line); border-radius:7px; cursor:pointer; text-align:left; }
+.bpickBtn.none { color:#b91c1c; }
+.bpickLabel { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* fixed + 组件量出的坐标:表格的滚动容器裁不到它(top/left/width 由组件内联注入) */
+.bpickPanel { position:fixed; z-index:30; max-height:260px; overflow-y:auto; overflow-x:hidden;
+  background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.12); padding:6px; }
+/* 三列定宽 grid:勾选框 | key | 名称 —— 每行同一套列,天然对齐,不受别处样式牵连 */
+.bpickOpt { display:grid; grid-template-columns:16px 70px minmax(0,1fr); align-items:center; column-gap:8px;
+  justify-items:start; text-align:left; margin:0; padding:5px 6px; font-size:13px; color:#16181d;
+  white-space:nowrap; border-radius:5px; cursor:pointer; }
+.bpickKey { font-weight:600; }
+.bpickName { color:var(--muted); overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.bpickOpt:hover { background:var(--bg); }
+/* 全局 input 规则(padding/边框/白底)会把复选框撑成大方块 —— 这里还原成原生小勾选框 */
+.bpickOpt input { appearance:auto; -webkit-appearance:auto; width:14px; height:14px; padding:0; border:0; background:none; margin:0; }
+.utable .bpick { min-width:150px; }
 .addUser { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
-.addUser .fgroup input, .addUser .fgroup select { min-width:170px; }

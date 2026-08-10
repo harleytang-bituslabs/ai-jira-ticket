@@ -33,7 +33,6 @@ export async function verifyPassword(password: string, stored: ScryptHash): Prom
   return hash.length === expected.length && timingSafeEqual(hash, expected);
 }
 
-export const SESSION_COOKIE = "ajt_session";
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
 
 function sign(payload: string, secret: string): string {

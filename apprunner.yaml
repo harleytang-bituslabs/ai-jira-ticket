@@ -28,7 +28,5 @@ run:
       value: "9300"
     - name: AJT_S3_BUCKET
       value: "bituslabs-ai-jira-ticket" # 草稿与用户表的唯一真相源（容器磁盘是易失的）
-    - name: AJT_COOKIE_SECURE
-      value: "1" # App Runner 终结 TLS，会话 cookie 可以要求 Secure
     - name: NODE_ENV
       value: "production"

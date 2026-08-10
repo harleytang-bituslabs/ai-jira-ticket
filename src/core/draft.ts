@@ -15,6 +15,7 @@ import type { ProjectMeta } from "../clients/jira-client.js";
 import { generateStructured, type ChatMessage } from "../llm/client.js";
 import type { ResolvedConfig } from "./config.js";
 import { DraftPayloadObjectSchema, DraftPayloadSchema, type DraftFile } from "./schema.js";
+import type { CacheStore } from "../stores/cache-store.js";
 import { cacheAgeDays, readProjectMeta, readSpecCache } from "./spec-cache.js";
 
 const PROMPT_URL = new URL("../prompts/draft-system.md", import.meta.url);
@@ -39,6 +40,8 @@ export interface DraftOptions {
    */
   fieldDirectives?: string;
   onProgress?: (message: string) => void;
+  /** 参考数据后端:CLI 用本地目录,Web 用共享的 S3 前缀。 */
+  cache: CacheStore;
 }
 
 export async function draftTickets(input: string, opts: DraftOptions): Promise<DraftFile> {
@@ -46,8 +49,8 @@ export async function draftTickets(input: string, opts: DraftOptions): Promise<D
   const send = opts.onProgress ?? (() => {});
   const maxRepair = opts.maxRepair ?? 2;
 
-  const spec = await readSpecCache(config.cacheDir);
-  const meta = await readProjectMeta(config.cacheDir);
+  const spec = await readSpecCache(opts.cache);
+  const meta = await readProjectMeta(opts.cache);
   const age = cacheAgeDays(spec);
   if (age >= STALE_SPEC_DAYS) {
     send(`⚠ 规范缓存已是 ${age} 天前同步的，建议先跑 ajt sync-spec`);

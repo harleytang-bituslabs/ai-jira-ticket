@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { searchIssues } from "../src/clients/jira-client.js";
 import { loadConfig } from "../src/core/config.js";
 import { writeIssuesCache } from "../src/core/spec-cache.js";
+import { FsCacheStore } from "../src/stores/cache-store.js";
 
 const config = await loadConfig(process.argv[2] ?? "config.json");
 
@@ -19,7 +20,7 @@ console.log(`拉取项目 ${config.projectKey} 的全部票据 …`);
 const issues = await searchIssues(`project = ${config.projectKey} ORDER BY created ASC`);
 
 const outPath = join(config.cacheDir, "issues.json");
-await writeIssuesCache(config.cacheDir, {
+await writeIssuesCache(new FsCacheStore(config.cacheDir), {
   projectKey: config.projectKey,
   fetchedAt: new Date().toISOString(),
   issues,

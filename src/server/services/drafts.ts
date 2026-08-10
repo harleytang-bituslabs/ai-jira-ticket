@@ -7,6 +7,7 @@
  */
 
 import { readIssuesCache } from "../../core/spec-cache.js";
+import type { CacheStore } from "../../stores/cache-store.js";
 import { DraftFileSchema, type DraftFile } from "../../core/schema.js";
 import type { ResolvedConfig } from "../../core/config.js";
 
@@ -39,12 +40,13 @@ export function parseComposeDefaults(raw: Record<string, unknown>): ComposeDefau
  */
 export async function buildFieldDirectives(
   config: ResolvedConfig,
+  cache: CacheStore,
   defaults: ComposeDefaults,
 ): Promise<string | undefined> {
   const parts: string[] = [];
   if (defaults.issueType) parts.push(`主票类型 ${defaults.issueType}`);
   if (defaults.parentKey) {
-    const issues = await readIssuesCache(config.cacheDir).catch(() => null);
+    const issues = await readIssuesCache(cache).catch(() => null);
     const title = issues?.issues.find((i) => i.key === defaults.parentKey)?.summary;
     parts.push(`父级 ${defaults.parentKey}${title ? `《${title}》` : ""}`);
   }

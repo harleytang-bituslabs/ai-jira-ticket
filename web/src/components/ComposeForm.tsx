@@ -89,8 +89,11 @@ export function ComposeForm({
   const bigRoster = meta.roster.length > 8;
   const pickAssigneeText = (text: string) => {
     setAssigneeText(text);
-    const hit = meta.roster.find((m) => m.name === text || m.email === text);
-    setAssignee(hit ? hit.email : null);
+    const t = text.trim();
+    const hit = meta.roster.find((m) => m.name === t || m.email === t);
+    // 名册来自「项目参与者」，从没被派过票的新人不在其中，所以看起来像邮箱就直接采用；
+    // 真假由提交时的 Jira 用户查找兜底（查不到会明确报错，不会静默落到错的人头上）。
+    setAssignee(hit ? hit.email : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t) ? t : null);
     clearMark("assignee");
   };
 
@@ -201,20 +204,28 @@ export function ComposeForm({
             <input
               className={"assigneePick" + (invalid.has("assignee") ? " invalid" : "")}
               list="rosterList"
-              placeholder="输入姓名搜索（必填）"
+              placeholder="输入姓名搜索，新人可直接填邮箱（必填）"
               value={assigneeText}
               onChange={(e) => pickAssigneeText(e.target.value)}
             />
           ) : (
-            <Seg
-              items={meta.roster.map((m) => ({ label: m.name, value: m.email }))}
-              value={assignee}
-              onChange={(v) => {
-                setAssignee(v);
+            // 小名册（l2 的团队）也用下拉,不平铺罗列 —— 和卡片上的指派控件一个形态
+            <select
+              className={"assigneePick" + (invalid.has("assignee") ? " invalid" : "")}
+              value={assignee ?? ""}
+              onChange={(e) => {
+                setAssignee(e.target.value || null);
                 clearMark("assignee");
               }}
-              invalid={invalid.has("assignee")}
-            />
+            >
+              <option value="">指派给（必填）</option>
+              {meta.roster.map((m) => (
+                <option key={m.email} value={m.email}>
+                  {m.name}
+                  {m.email === user.email ? "（本人）" : ""}
+                </option>
+              ))}
+            </select>
           )}
           {bigRoster && (
             <datalist id="rosterList">

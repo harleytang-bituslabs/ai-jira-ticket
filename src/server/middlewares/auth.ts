@@ -1,12 +1,17 @@
 /**
- * Session middleware chain: attachAuth parses the cookie and mounts req.user
- * (fresh from the user directory — cookie carries identity only, never level
- * or active status); requireAuth / requireAdmin are the route guards.
+ * Session middleware chain: attachAuth verifies the Authorization header and
+ * mounts req.user (fresh from the user directory — the token carries identity
+ * only, never level or active status); requireAuth / requireAdmin guard routes.
+ *
+ * Header-only on purpose: the token lives in each tab's sessionStorage, so one
+ * computer can hold several accounts at once. A cookie fallback would undo
+ * that — the browser shares cookies across tabs, so the last login would
+ * silently take over every tab that lacks its own token.
  */
 
 import type { NextFunction, Request, Response } from "express";
 import type { UserRecord, UserStore } from "../../stores/user-store.js";
-import { SESSION_COOKIE, verifySessionToken } from "../session.js";
+import { verifySessionToken } from "../session.js";
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -17,20 +22,9 @@ declare global {
   }
 }
 
-function readCookie(req: Request, name: string): string | null {
-  const header = req.headers.cookie;
-  if (!header) return null;
-  for (const part of header.split(";")) {
-    const eq = part.indexOf("=");
-    if (eq < 0) continue;
-    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
-  }
-  return null;
-}
-
 export function attachAuth(users: UserStore, secret: string) {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
-    const token = readCookie(req, SESSION_COOKIE);
+    const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1];
     if (token) {
       const email = verifySessionToken(token, secret);
       if (email) {

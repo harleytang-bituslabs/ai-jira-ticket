@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { api, errMsg } from "../api";
+import { api, clearSessionToken, errMsg } from "../api";
 import { AdminPanel } from "../components/AdminPanel";
 import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
 import { ComposeForm } from "../components/ComposeForm";
@@ -33,8 +33,9 @@ export function MainPage({ user, onLogout }: { user: User; onLogout: () => void 
     reloadMeta().catch((e) => setMetaErr(errMsg(e)));
   }, [reloadMeta]);
 
-  const logout = async () => {
-    await api("POST", "/api/logout").catch(() => {});
+  // 登出 = 丢掉本标签页的 token。服务端无状态,没有要通知的东西;别的标签页不受影响。
+  const logout = () => {
+    clearSessionToken();
     onLogout();
   };
 
@@ -114,8 +115,7 @@ export function MainPage({ user, onLogout }: { user: User; onLogout: () => void 
             onDeletedCurrent={() => setCurrent(null)}
           />
         )}
-        {/* 已接入的 board;第二刀会换成 meta.boards 的多选 */}
-        {tab === "admin" && user.level === "admin" && <AdminPanel boards={meta ? [meta.projectKey] : []} />}
+        {tab === "admin" && user.level === "admin" && <AdminPanel />}
       </main>
       {pwOpen && <ChangePasswordDialog onClose={() => setPwOpen(false)} />}
     </>

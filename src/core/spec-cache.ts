@@ -1,6 +1,7 @@
 /**
- * Local caches under the cache dir, written by sync-spec / fetch-issues and
- * read by draft, submit and the web UI:
+ * Shared reference data behind a CacheStore (local dir for the CLI, one S3
+ * prefix for the web service), written by sync-spec / fetch-issues / 「更新
+ * config」 and read by draft, submit and the web UI:
  *   - spec.md           — ticketing conventions as markdown with frontmatter
  *                         (source/version/syncedAt). The body is injected
  *                         byte-for-byte into system prompts, which is what
@@ -9,10 +10,8 @@
  *   - issues.json       — the project's tickets (npm run fetch-issues).
  */
 
-import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import type { JiraIssueSummary, ProjectMeta } from "../clients/jira-client.js";
-import { atomicWrite } from "../utils/fs.js";
+import type { CacheStore } from "../stores/cache-store.js";
 
 const SPEC_FILE = "spec.md";
 const META_FILE = "project-meta.json";
@@ -31,24 +30,21 @@ export interface SpecCache {
   syncedAt: string;
 }
 
-export async function writeSpecCache(dir: string, cache: SpecCache): Promise<void> {
-  await mkdir(dir, { recursive: true });
+export async function writeSpecCache(store: CacheStore, cache: SpecCache): Promise<void> {
   const frontmatter = ["---", `syncedAt: ${cache.syncedAt}`, `sources: ${JSON.stringify(cache.sources)}`, "---", ""].join(
     "\n",
   );
-  await atomicWrite(join(dir, SPEC_FILE), frontmatter + cache.markdown);
+  await store.write(SPEC_FILE, frontmatter + cache.markdown);
 }
 
-export async function readSpecCache(dir: string): Promise<SpecCache> {
-  let raw: string;
-  try {
-    raw = await readFile(join(dir, SPEC_FILE), "utf-8");
-  } catch {
-    throw new Error(`No spec cache found at ${dir}/${SPEC_FILE} — run \`ajt sync-spec\` first`);
+export async function readSpecCache(store: CacheStore): Promise<SpecCache> {
+  const raw = await store.read(SPEC_FILE);
+  if (raw === null) {
+    throw new Error(`No ${SPEC_FILE} in the cache — run \`ajt sync-spec\` (or hit 「更新config」) first`);
   }
   const m = /^---\n([\s\S]*?)\n---\n/.exec(raw);
   if (!m) {
-    throw new Error(`${dir}/${SPEC_FILE} is missing its frontmatter — re-run \`ajt sync-spec\``);
+    throw new Error(`${SPEC_FILE} is missing its frontmatter — re-run \`ajt sync-spec\``);
   }
   const fields = new Map(
     m[1].split("\n").map((line) => {
@@ -63,17 +59,16 @@ export async function readSpecCache(dir: string): Promise<SpecCache> {
   };
 }
 
-export async function writeProjectMeta(dir: string, meta: ProjectMeta): Promise<void> {
-  await mkdir(dir, { recursive: true });
-  await atomicWrite(join(dir, META_FILE), JSON.stringify(meta, null, 2) + "\n");
+export async function writeProjectMeta(store: CacheStore, meta: ProjectMeta): Promise<void> {
+  await store.write(META_FILE, JSON.stringify(meta, null, 2) + "\n");
 }
 
-export async function readProjectMeta(dir: string): Promise<ProjectMeta> {
-  try {
-    return JSON.parse(await readFile(join(dir, META_FILE), "utf-8")) as ProjectMeta;
-  } catch {
-    throw new Error(`No project metadata found at ${dir}/${META_FILE} — run \`ajt sync-spec\` first`);
+export async function readProjectMeta(store: CacheStore): Promise<ProjectMeta> {
+  const raw = await store.read(META_FILE);
+  if (raw === null) {
+    throw new Error(`No ${META_FILE} in the cache — run \`ajt sync-spec\` (or hit 「更新config」) first`);
   }
+  return JSON.parse(raw) as ProjectMeta;
 }
 
 export function cacheAgeDays(cache: SpecCache): number {
@@ -90,20 +85,43 @@ export interface IssuesCache {
   issues: JiraIssueSummary[];
 }
 
-export async function writeIssuesCache(dir: string, cache: IssuesCache): Promise<void> {
-  await mkdir(dir, { recursive: true });
-  await atomicWrite(join(dir, ISSUES_FILE), JSON.stringify(cache, null, 2) + "\n");
+export async function writeIssuesCache(store: CacheStore, cache: IssuesCache): Promise<void> {
+  await store.write(ISSUES_FILE, JSON.stringify(cache, null, 2) + "\n");
 }
 
-export async function readIssuesCache(dir: string): Promise<IssuesCache> {
+export async function readIssuesCache(store: CacheStore): Promise<IssuesCache> {
+  const raw = await store.read(ISSUES_FILE);
+  if (raw === null) {
+    throw new Error(`No ${ISSUES_FILE} in the cache — run \`npm run fetch-issues\` (or hit 「更新config」) first`);
+  }
+  return JSON.parse(raw) as IssuesCache;
+}
+
+// ─── Company board list (projects.json, written by /api/refresh) ────────────
+
+const PROJECTS_FILE = "projects.json";
+
+export interface ProjectsCache {
+  fetchedAt: string;
+  projects: Array<{ key: string; name: string }>;
+}
+
+export async function writeProjectsCache(store: CacheStore, cache: ProjectsCache): Promise<void> {
+  await store.write(PROJECTS_FILE, JSON.stringify(cache, null, 2) + "\n");
+}
+
+/** 缺失时给空清单而不是报错 —— 调用方须自行把已接入的 board 兜底进去。 */
+export async function readProjectsCache(store: CacheStore): Promise<ProjectsCache> {
   try {
-    return JSON.parse(await readFile(join(dir, ISSUES_FILE), "utf-8")) as IssuesCache;
+    const raw = await store.read(PROJECTS_FILE);
+    if (raw === null) return { fetchedAt: "", projects: [] };
+    return JSON.parse(raw) as ProjectsCache;
   } catch {
-    throw new Error(`No issues cache at ${dir}/${ISSUES_FILE} — run \`npm run fetch-issues\` first`);
+    return { fetchedAt: "", projects: [] };
   }
 }
 
-// ─── Site user roster (users.json, written by fetch-users / /api/refresh) ───
+// ─── Participant roster (users.json, written by fetch-users / /api/refresh) ─
 
 const USERS_FILE = "users.json";
 
@@ -113,18 +131,21 @@ export interface UsersCache {
   users: Array<{ accountId: string; displayName: string; email: string | null }>;
 }
 
-export async function writeUsersCache(dir: string, cache: UsersCache): Promise<void> {
-  await mkdir(dir, { recursive: true });
-  await atomicWrite(join(dir, USERS_FILE), JSON.stringify(cache, null, 2) + "\n");
+export async function writeUsersCache(store: CacheStore, cache: UsersCache): Promise<void> {
+  await store.write(USERS_FILE, JSON.stringify(cache, null, 2) + "\n");
 }
 
 /**
- * Assignee roster for the web form: cached Jira users with a visible email.
- * Returns an empty list (and null timestamp) when the cache doesn't exist yet.
+ * Assignee roster for the web form: cached project participants with a visible
+ * email. Returns an empty list (and null timestamp) when the cache doesn't
+ * exist yet, so a fresh deployment degrades to config.teamMembers rather than
+ * erroring.
  */
-export async function readRoster(dir: string): Promise<{ fetchedAt: string | null; members: Array<{ name: string; email: string }> }> {
+export async function readRoster(store: CacheStore): Promise<{ fetchedAt: string | null; members: Array<{ name: string; email: string }> }> {
   try {
-    const doc = JSON.parse(await readFile(join(dir, USERS_FILE), "utf-8")) as UsersCache;
+    const raw = await store.read(USERS_FILE);
+    if (raw === null) return { fetchedAt: null, members: [] };
+    const doc = JSON.parse(raw) as UsersCache;
     return {
       fetchedAt: doc.fetchedAt ?? null,
       members: doc.users

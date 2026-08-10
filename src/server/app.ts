@@ -13,6 +13,7 @@ import express from "express";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolvedConfig } from "../core/config.js";
+import type { CacheStore } from "../stores/cache-store.js";
 import type { DraftStore } from "../stores/draft-store.js";
 import type { UserStore } from "../stores/user-store.js";
 import { attachAuth, requireAdmin, requireAuth } from "./middlewares/auth.js";
@@ -29,6 +30,8 @@ const WEB_DIST = fileURLToPath(new URL("../../web/dist", import.meta.url));
 export interface AppDeps {
   drafts: DraftStore;
   users: UserStore;
+  /** 共享参考数据(规范/看板/名册)。所有用户读同一份,不按人隔离。 */
+  cache: CacheStore;
   sessionSecret: string;
 }
 
@@ -52,9 +55,9 @@ export function buildApp(config: ResolvedConfig, deps: AppDeps): express.Express
   });
 
   app.use("/api", authRoutes(deps.users, deps.sessionSecret));
-  app.use("/api/admin", requireAdmin, adminRoutes(config, deps.users));
-  app.use("/api", requireAuth, metaRoutes(config));
-  app.use("/api", requireAuth, draftsRoutes(config, deps.drafts));
+  app.use("/api/admin", requireAdmin, adminRoutes(config, deps.users, deps.cache));
+  app.use("/api", requireAuth, metaRoutes(config, deps.cache, deps.users));
+  app.use("/api", requireAuth, draftsRoutes(config, deps.drafts, deps.cache, deps.users));
 
   app.use(notFound);
   app.use(errorHandler);

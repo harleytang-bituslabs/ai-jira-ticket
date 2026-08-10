@@ -11,12 +11,20 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, errMsg } from "../api";
 import { LEVEL_LABELS, TEAMS } from "../constants";
+import { BoardPicker } from "./BoardPicker";
 import type { AdminUser, UserLevel } from "../types";
 
 const LEVELS: UserLevel[] = ["l1", "l2", "admin"];
 
-export function AdminPanel({ boards }: { boards: string[] }) {
+/** 列表顺序：管理员在前，同级按姓名 —— 权限高的行最常被查看和改动。 */
+const LEVEL_RANK: Record<UserLevel, number> = { admin: 0, l2: 1, l1: 2 };
+const byLevelThenName = (a: AdminUser, b: AdminUser): number =>
+  LEVEL_RANK[a.level] - LEVEL_RANK[b.level] || a.name.localeCompare(b.name);
+
+export function AdminPanel() {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
+  // 授权候选:全公司 board(已接入的排最前),来自「更新config」拉的清单
+  const [boards, setBoards] = useState<Array<{ key: string; name: string }>>([]);
   const [status, setStatus] = useState<{ text: string; cls?: "ok" | "error" } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -30,10 +38,15 @@ export function AdminPanel({ boards }: { boards: string[] }) {
 
   const load = () => {
     api<{ users: AdminUser[] }>("GET", "/api/admin/users")
-      .then((d) => setUsers(d.users))
+      .then((d) => setUsers([...d.users].sort(byLevelThenName)))
       .catch((e) => setStatus({ text: errMsg(e), cls: "error" }));
   };
   useEffect(load, []);
+  useEffect(() => {
+    api<{ boards: Array<{ key: string; name: string }> }>("GET", "/api/admin/boards")
+      .then((d) => setBoards(d.boards))
+      .catch(() => {}); // 清单拉不到只是下拉变空,不打断管理页
+  }, []);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -70,6 +83,40 @@ export function AdminPanel({ boards }: { boards: string[] }) {
     });
   };
 
+  /** 按 Jira 参与记录猜此人该开哪些 board。识别失败不打断流程 —— 手动勾选始终可用。 */
+  const detectBoards = async (email: string): Promise<string[] | null> => {
+    if (!email.includes("@")) return null;
+    try {
+      const d = await api<{ boards: string[] }>("GET", `/api/admin/participation?email=${encodeURIComponent(email)}`);
+      return d.boards;
+    } catch {
+      return null;
+    }
+  };
+
+  const autofillBoards = async (email: string) => {
+    const found = await detectBoards(email.trim());
+    if (!found) return;
+    setNBoards(found);
+    setStatus(
+      found.length
+        ? { text: `按 Jira 参与记录识别到：${found.join("、")}（可手动改）`, cls: "ok" }
+        : { text: "这个邮箱在已接入的 board 里没有参与记录，请手动勾选可见 board" },
+    );
+  };
+
+  const syncBoardsFromJira = (u: AdminUser) =>
+    void run(async () => {
+      const found = await detectBoards(u.email);
+      if (!found?.length) {
+        setStatus({ text: `${u.email} 在已接入的 board 里没有参与记录，未改动` });
+        return;
+      }
+      const merged = [...new Set([...u.boards, ...found])];
+      await api("PATCH", `/api/admin/users/${encodeURIComponent(u.email)}`, { boards: merged });
+      setStatus({ text: `已按参与记录给 ${u.email} 补上：${found.join("、")}`, cls: "ok" });
+    });
+
   const patch = (email: string, body: Record<string, unknown>, okText?: string) =>
     run(async () => {
       await api("PATCH", `/api/admin/users/${encodeURIComponent(email)}`, body);
@@ -82,24 +129,30 @@ export function AdminPanel({ boards }: { boards: string[] }) {
     void patch(u.email, { password: pw }, `已重置 ${u.email} 的密码，请线下告知`);
   };
 
-
   return (
     <div>
       <section className="card">
         <form className="addUser" onSubmit={create}>
-          <div className="fgroup">
+          <div className="fgroup fEmail">
             <label>登录名（工作邮箱）</label>
-            <input type="text" required value={nEmail} onChange={(e) => setNEmail(e.target.value)} placeholder="name@bituslabs.com" />
+            <input
+              type="text"
+              required
+              value={nEmail}
+              onChange={(e) => setNEmail(e.target.value)}
+              onBlur={(e) => void autofillBoards(e.target.value)}
+              placeholder="name@bituslabs.com"
+            />
           </div>
-          <div className="fgroup">
+          <div className="fgroup fName">
             <label>姓名</label>
             <input required value={nName} onChange={(e) => setNName(e.target.value)} />
           </div>
-          <div className="fgroup">
+          <div className="fgroup fPass">
             <label>初始密码（至少 8 位）</label>
             <input required value={nPassword} onChange={(e) => setNPassword(e.target.value)} />
           </div>
-          <div className="fgroup">
+          <div className="fgroup fLevel">
             <label>级别</label>
             <select value={nLevel} onChange={(e) => setNLevel(e.target.value as UserLevel)}>
               {LEVELS.map((l) => (
@@ -109,8 +162,8 @@ export function AdminPanel({ boards }: { boards: string[] }) {
               ))}
             </select>
           </div>
-          <div className="fgroup">
-            <label>团队（仅展示用）</label>
+          <div className="fgroup fTeam">
+            <label>团队（决定高级账号的派活范围）</label>
             <select value={nTeam} onChange={(e) => setNTeam(e.target.value)}>
               <option value="">不填</option>
               {TEAMS.map((t) => (
@@ -120,21 +173,14 @@ export function AdminPanel({ boards }: { boards: string[] }) {
               ))}
             </select>
           </div>
-          <div className="fgroup">
-            <label>可见 board{nLevel === "admin" ? "（管理员恒定全部）" : ""}</label>
-            <span className="boardPick">
-              {boards.map((b) => (
-                <label key={b} className="boardOpt">
-                  <input
-                    type="checkbox"
-                    disabled={nLevel === "admin"}
-                    checked={nLevel === "admin" || nBoards.includes(b)}
-                    onChange={(e) => setNBoards((prev) => (e.target.checked ? [...prev, b] : prev.filter((x) => x !== b)))}
-                  />
-                  {b}
-                </label>
-              ))}
-            </span>
+          <div className="fgroup fBoards">
+            <label>可见 board</label>
+            <BoardPicker
+              boards={boards}
+              value={nBoards}
+              onChange={setNBoards}
+              {...(nLevel === "admin" ? { fixedLabel: "全部（管理员）" } : {})}
+            />
           </div>
           <button className="primary" type="submit" disabled={busy}>
             添加用户
@@ -148,6 +194,7 @@ export function AdminPanel({ boards }: { boards: string[] }) {
       <section className="card">
         {!users && <div className="empty">加载中…</div>}
         {users && (
+          <div className="tableWrap">
           <table className="utable">
             <thead>
               <tr>
@@ -186,28 +233,13 @@ export function AdminPanel({ boards }: { boards: string[] }) {
                     </select>
                   </td>
                   <td>
-                    {u.level === "admin" ? (
-                      <span className="sub">全部</span>
-                    ) : (
-                      <span className="boardPick">
-                        {boards.map((b) => (
-                          <label key={b} className="boardOpt">
-                            <input
-                              type="checkbox"
-                              disabled={busy}
-                              checked={u.boards.includes(b)}
-                              onChange={(e) =>
-                                void patch(u.email, {
-                                  boards: e.target.checked ? [...u.boards, b] : u.boards.filter((x) => x !== b),
-                                })
-                              }
-                            />
-                            {b}
-                          </label>
-                        ))}
-                        {u.boards.length === 0 && <span className="off">开不了票</span>}
-                      </span>
-                    )}
+                    <BoardPicker
+                      boards={boards}
+                      value={u.boards}
+                      disabled={busy}
+                      onChange={(next) => void patch(u.email, { boards: next })}
+                      {...(u.level === "admin" ? { fixedLabel: "全部" } : {})}
+                    />
                   </td>
                   <td className={u.active ? "" : "off"}>{u.active ? "正常" : "已停用"}</td>
                   <td>{new Date(u.createdAt).toLocaleDateString()}</td>
@@ -216,6 +248,11 @@ export function AdminPanel({ boards }: { boards: string[] }) {
                       <button className="ghost" disabled={busy} onClick={() => resetPassword(u)}>
                         重置密码
                       </button>
+                      {u.level !== "admin" && (
+                        <button className="ghost" disabled={busy} onClick={() => syncBoardsFromJira(u)} title="按 Jira 参与记录补上可见 board">
+                          识别 board
+                        </button>
+                      )}
                       {u.active ? (
                         <button
                           className="danger"
@@ -237,6 +274,7 @@ export function AdminPanel({ boards }: { boards: string[] }) {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>

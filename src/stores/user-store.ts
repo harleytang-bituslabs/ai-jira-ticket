@@ -16,7 +16,7 @@ import { atomicWrite } from "../utils/fs.js";
 export const USER_LEVELS = ["l1", "l2", "admin"] as const;
 export type UserLevel = (typeof USER_LEVELS)[number];
 
-/** 可选的团队标签。纯展示,不参与权限;前端下拉框用的是 web/src/constants.ts 里的同一份。 */
+/** 团队。l2 的派活范围就圈在同团队账号内(见 policy.ts);前端下拉框用 web/src/constants.ts 里的同一份。 */
 export const TEAMS = ["AI", "MLE", "Art", "Devops", "BO", "Leader"] as const;
 export type Team = (typeof TEAMS)[number];
 
@@ -38,7 +38,7 @@ const UserRecordSchema = z.object({
    */
   boards: z.array(z.string()).default([]),
   /**
-   * 纯展示标签(管理页、历史分组),不参与任何权限判断。
+   * 所属团队 —— l2 只能派活给同团队的活跃账号(policy.ts 的 teamRoster)。
    * 用 .catch 而非硬校验:手改过的 users.json 出现陌生值时只丢掉这一个字段,
    * 不至于整份文档解析失败把所有人挡在门外。写入侧在路由层严格校验。
    */

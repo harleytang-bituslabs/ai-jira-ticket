@@ -1,10 +1,10 @@
-/** /api/login · /api/logout · /api/me · /api/me/password */
+/** /api/login · /api/me · /api/me/password（登出=前端丢 token,服务端无状态） */
 
 import { Router } from "express";
 import type { UserRecord, UserStore } from "../../stores/user-store.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { clearLoginFailures, loginBlocked, recordLoginFailure } from "../middlewares/rate-limit.js";
-import { SESSION_COOKIE, SESSION_TTL_MS, createSessionToken, hashPassword, verifyPassword } from "../session.js";
+import { createSessionToken, hashPassword, verifyPassword } from "../session.js";
 
 /** 对前端暴露的用户信息(绝不含口令哈希)。 */
 export const publicUser = (
@@ -41,18 +41,10 @@ export function authRoutes(users: UserStore, secret: string): Router {
       return;
     }
     clearLoginFailures(ip, email);
-    res.cookie(SESSION_COOKIE, createSessionToken(user.email, secret), {
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: SESSION_TTL_MS,
-      secure: process.env.AJT_COOKIE_SECURE === "1", // 上 HTTPS 后置 1
-    });
-    res.json({ user: publicUser(user) });
-  });
-
-  router.post("/logout", (_req, res) => {
-    res.clearCookie(SESSION_COOKIE);
-    res.json({ ok: true });
+    // token 只随响应给前端,存进标签页级的 sessionStorage 走 Authorization 头。
+    // 刻意不种 cookie:cookie 是全浏览器共享的,会让最后登录的账号
+    // 悄悄接管所有没有自己 token 的标签页 —— 一台电脑多账号就泡汤了。
+    res.json({ user: publicUser(user), token: createSessionToken(user.email, secret) });
   });
 
   router.get("/me", requireAuth, (req, res) => {

@@ -15,6 +15,7 @@ import { writeDraftFiles } from "../core/draft-files.js";
 import { renderDraftMarkdown } from "../core/render.js";
 import type { DraftFile } from "../core/schema.js";
 import { readProjectMeta } from "../core/spec-cache.js";
+import { FsCacheStore } from "../stores/cache-store.js";
 import { submitDraft } from "../core/submit.js";
 import { syncSpec } from "../core/sync-spec.js";
 import { atomicWrite } from "../utils/fs.js";
@@ -32,7 +33,7 @@ program
   .description("拉取 Confluence 规范 + Jira 项目元数据，写入本地缓存")
   .action(async () => {
     const config = await loadConfig(program.opts().config);
-    const { spec, meta } = await syncSpec(config, (m) => console.log(m));
+    const { spec, meta } = await syncSpec(config, new FsCacheStore(config.cacheDir), (m: string) => console.log(m));
     console.log(`\n规范缓存 → ${config.cacheDir}/spec.md`);
     for (const s of spec.sources) console.log(`  《${s.title}》 v${s.version ?? "?"}  ${s.url}`);
     console.log(`项目元数据 → ${config.cacheDir}/project-meta.json`);
@@ -48,7 +49,11 @@ program
   .action(async (inputWords: string[]) => {
     const config = await loadConfig(program.opts().config);
     const input = inputWords.join(" ");
-    const draft = await draftTickets(input, { config, onProgress: (m) => console.log(m) });
+    const draft = await draftTickets(input, {
+      config,
+      cache: new FsCacheStore(config.cacheDir), // 个人本地模式:参考数据就在 .cache/,不碰 S3
+      onProgress: (m) => console.log(m),
+    });
     const { jsonPath, mdPath } = await writeDraftFiles(draft, config.draftsDir);
 
     console.log(`\n生成 ${draft.tickets.length} 张票:`);
@@ -72,7 +77,7 @@ program
   .option("--force", "跳过元数据预检")
   .action(async (file: string, opts: { dryRun?: boolean; yes?: boolean; force?: boolean }) => {
     const config = await loadConfig(program.opts().config);
-    const meta = await readProjectMeta(config.cacheDir);
+    const meta = await readProjectMeta(new FsCacheStore(config.cacheDir));
     let raw: string;
     try {
       raw = await readFile(file, "utf-8");
