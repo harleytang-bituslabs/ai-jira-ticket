@@ -1,17 +1,21 @@
 /**
  * 管理面板（仅 admin tab 可见，接口另有 requireAdmin 硬门）：
- * 建号 / 定级 / 停用启用 / 重置密码 / 配 Jira 邮箱。
+ * 建号 / 定级 / 授权 board / 定团队 / 停用启用 / 重置密码。
+ * 登录名就是工作邮箱，也就是此人在 Jira 上的身份，没有第二个邮箱要配。
  * 停用即时生效（会话 30 秒内失效）；末位活跃管理员不可自锁（服务端拒绝）。
+ *
+ * 新账号默认不可见任何 board（= 开不了票），必须在这里显式勾选。
+ * admin 恒定可见全部 board，其 boards 列表不起作用，故显示为「全部」。
  */
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api, errMsg } from "../api";
-import { LEVEL_LABELS } from "../constants";
+import { LEVEL_LABELS, TEAMS } from "../constants";
 import type { AdminUser, UserLevel } from "../types";
 
 const LEVELS: UserLevel[] = ["l1", "l2", "admin"];
 
-export function AdminPanel() {
+export function AdminPanel({ boards }: { boards: string[] }) {
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [status, setStatus] = useState<{ text: string; cls?: "ok" | "error" } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -21,7 +25,8 @@ export function AdminPanel() {
   const [nName, setNName] = useState("");
   const [nPassword, setNPassword] = useState("");
   const [nLevel, setNLevel] = useState<UserLevel>("l1");
-  const [nJira, setNJira] = useState("");
+  const [nBoards, setNBoards] = useState<string[]>([]);
+  const [nTeam, setNTeam] = useState("");
 
   const load = () => {
     api<{ users: AdminUser[] }>("GET", "/api/admin/users")
@@ -51,14 +56,17 @@ export function AdminPanel() {
         name: nName.trim(),
         password: nPassword,
         level: nLevel,
-        ...(nJira.trim() ? { jiraEmail: nJira.trim() } : {}),
+        boards: nBoards,
+        ...(nTeam ? { team: nTeam } : {}),
       });
-      setStatus({ text: `已创建 ${nEmail.trim()}，请线下告知初始密码`, cls: "ok" });
+      const warn = nLevel !== "admin" && nBoards.length === 0 ? "，但还没授权任何 board，他暂时开不了票" : "";
+      setStatus({ text: `已创建 ${nEmail.trim()}，请线下告知初始密码${warn}`, cls: "ok" });
       setNEmail("");
       setNName("");
       setNPassword("");
       setNLevel("l1");
-      setNJira("");
+      setNBoards([]);
+      setNTeam("");
     });
   };
 
@@ -74,11 +82,6 @@ export function AdminPanel() {
     void patch(u.email, { password: pw }, `已重置 ${u.email} 的密码，请线下告知`);
   };
 
-  const editJira = (u: AdminUser) => {
-    const v = prompt(`${u.name} 的 Jira 账号邮箱（留空 = 与登录邮箱相同）：`, u.jiraEmail ?? "");
-    if (v === null) return;
-    void patch(u.email, { jiraEmail: v.trim() });
-  };
 
   return (
     <div>
@@ -107,8 +110,31 @@ export function AdminPanel() {
             </select>
           </div>
           <div className="fgroup">
-            <label>Jira 邮箱（与登录邮箱不同时才填）</label>
-            <input value={nJira} onChange={(e) => setNJira(e.target.value)} placeholder="留空 = 相同" />
+            <label>团队（仅展示用）</label>
+            <select value={nTeam} onChange={(e) => setNTeam(e.target.value)}>
+              <option value="">不填</option>
+              {TEAMS.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="fgroup">
+            <label>可见 board{nLevel === "admin" ? "（管理员恒定全部）" : ""}</label>
+            <span className="boardPick">
+              {boards.map((b) => (
+                <label key={b} className="boardOpt">
+                  <input
+                    type="checkbox"
+                    disabled={nLevel === "admin"}
+                    checked={nLevel === "admin" || nBoards.includes(b)}
+                    onChange={(e) => setNBoards((prev) => (e.target.checked ? [...prev, b] : prev.filter((x) => x !== b)))}
+                  />
+                  {b}
+                </label>
+              ))}
+            </span>
           </div>
           <button className="primary" type="submit" disabled={busy}>
             添加用户
@@ -128,8 +154,9 @@ export function AdminPanel() {
                 <th>邮箱</th>
                 <th>姓名</th>
                 <th>级别</th>
+                <th>团队</th>
+                <th>可见 board</th>
                 <th>状态</th>
-                <th>Jira 邮箱</th>
                 <th>创建时间</th>
                 <th>操作</th>
               </tr>
@@ -148,16 +175,46 @@ export function AdminPanel() {
                       ))}
                     </select>
                   </td>
+                  <td>
+                    <select value={u.team ?? ""} disabled={busy} onChange={(e) => void patch(u.email, { team: e.target.value })}>
+                      <option value="">—</option>
+                      {TEAMS.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    {u.level === "admin" ? (
+                      <span className="sub">全部</span>
+                    ) : (
+                      <span className="boardPick">
+                        {boards.map((b) => (
+                          <label key={b} className="boardOpt">
+                            <input
+                              type="checkbox"
+                              disabled={busy}
+                              checked={u.boards.includes(b)}
+                              onChange={(e) =>
+                                void patch(u.email, {
+                                  boards: e.target.checked ? [...u.boards, b] : u.boards.filter((x) => x !== b),
+                                })
+                              }
+                            />
+                            {b}
+                          </label>
+                        ))}
+                        {u.boards.length === 0 && <span className="off">开不了票</span>}
+                      </span>
+                    )}
+                  </td>
                   <td className={u.active ? "" : "off"}>{u.active ? "正常" : "已停用"}</td>
-                  <td>{u.jiraEmail ?? "同登录邮箱"}</td>
                   <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td>
                     <span className="rowBtns">
                       <button className="ghost" disabled={busy} onClick={() => resetPassword(u)}>
                         重置密码
-                      </button>
-                      <button className="ghost" disabled={busy} onClick={() => editJira(u)}>
-                        Jira 邮箱
                       </button>
                       {u.active ? (
                         <button

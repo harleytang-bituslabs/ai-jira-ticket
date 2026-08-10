@@ -117,8 +117,8 @@ export function TicketCard({
           ))}
         </select>
         {isL1 ? (
-          <select className={("assg " + bad("assignee")).trim()} disabled value={t.assignee ?? user.jiraEmail} title="低级账号只能指派给本人">
-            <option value={user.jiraEmail}>{user.name}（本人）</option>
+          <select className={("assg " + bad("assignee")).trim()} disabled value={t.assignee ?? user.email} title="低级账号只能指派给本人">
+            <option value={user.email}>{user.name}（本人）</option>
           </select>
         ) : (
           <select

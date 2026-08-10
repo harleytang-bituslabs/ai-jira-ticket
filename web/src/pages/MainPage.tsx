@@ -114,7 +114,8 @@ export function MainPage({ user, onLogout }: { user: User; onLogout: () => void 
             onDeletedCurrent={() => setCurrent(null)}
           />
         )}
-        {tab === "admin" && user.level === "admin" && <AdminPanel />}
+        {/* 已接入的 board;第二刀会换成 meta.boards 的多选 */}
+        {tab === "admin" && user.level === "admin" && <AdminPanel boards={meta ? [meta.projectKey] : []} />}
       </main>
       {pwOpen && <ChangePasswordDialog onClose={() => setPwOpen(false)} />}
     </>

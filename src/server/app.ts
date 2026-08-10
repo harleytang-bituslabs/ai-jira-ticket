@@ -52,7 +52,7 @@ export function buildApp(config: ResolvedConfig, deps: AppDeps): express.Express
   });
 
   app.use("/api", authRoutes(deps.users, deps.sessionSecret));
-  app.use("/api/admin", requireAdmin, adminRoutes(deps.users));
+  app.use("/api/admin", requireAdmin, adminRoutes(config, deps.users));
   app.use("/api", requireAuth, metaRoutes(config));
   app.use("/api", requireAuth, draftsRoutes(config, deps.drafts));
 

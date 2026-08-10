@@ -151,5 +151,8 @@ button:disabled { opacity:.5; cursor:wait; }
 .utable .off { color:#b91c1c; }
 .utable .rowBtns { display:flex; gap:8px; white-space:nowrap; }
 .utable .rowBtns button { padding:5px 10px; font-size:13px; }
+.boardPick { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.boardOpt { display:inline-flex; align-items:center; gap:4px; font-size:13px; white-space:nowrap; }
+.boardOpt input { margin:0; }
 .addUser { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
 .addUser .fgroup input, .addUser .fgroup select { min-width:170px; }

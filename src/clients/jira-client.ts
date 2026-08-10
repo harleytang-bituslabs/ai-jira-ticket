@@ -207,14 +207,22 @@ export interface JiraUser {
 }
 
 /**
- * List the site's active human Jira users — deactivated accounts, apps/bots
- * and JSM customers are filtered out.
+ * The people who can actually be assigned work on one project — deactivated
+ * accounts, apps/bots and JSM customers filtered out.
+ *
+ * Deliberately NOT /users/search: that returns every account on the site
+ * regardless of project, which is what used to put the whole company in one
+ * board's assignee picker. Jira already knows who belongs to a project, so
+ * the scoping question is answered there rather than mirrored by us.
  */
-export async function listUsers(): Promise<JiraUser[]> {
+export async function listAssignableUsers(projectKey: string): Promise<JiraUser[]> {
   const users: JiraUser[] = [];
   const pageSize = 200;
+  const project = encodeURIComponent(projectKey);
   for (let startAt = 0; ; startAt += pageSize) {
-    const page = (await jiraFetch(`/rest/api/3/users/search?startAt=${startAt}&maxResults=${pageSize}`)) as Array<{
+    const page = (await jiraFetch(
+      `/rest/api/3/user/assignable/search?project=${project}&startAt=${startAt}&maxResults=${pageSize}`,
+    )) as Array<{
       accountId: string;
       accountType?: string;
       displayName?: string;

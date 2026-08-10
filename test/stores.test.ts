@@ -117,6 +117,7 @@ describe("FsDraftStore", () => {
 
 describe("FsUserStore", () => {
   let store: FsUserStore;
+  let usersPath: string;
 
   const user = (email: string, over: Partial<UserRecord> = {}): UserRecord => ({
     email,
@@ -125,12 +126,14 @@ describe("FsUserStore", () => {
     scrypt: { salt: "abc", hash: "def" },
     active: true,
     createdAt: "2026-07-01T00:00:00.000Z",
+    boards: [],
     ...over,
   });
 
   beforeEach(async () => {
     const dir = await mkdtemp(join(tmpdir(), "ajt-users-"));
-    store = new FsUserStore(join(dir, "users.json"));
+    usersPath = join(dir, "users.json");
+    store = new FsUserStore(usersPath);
   });
 
   it("starts empty and upserts new users", async () => {
@@ -153,5 +156,52 @@ describe("FsUserStore", () => {
 
   it("returns null for unknown users", async () => {
     expect(await store.get("nobody@x.com")).toBeNull();
+  });
+
+  it("legacy records without boards read back as seeing no board at all", async () => {
+    // 多 board 之前写下的记录没有 boards/team;解析后必须落到「什么都看不到」,
+    // 而不是静默全开 —— 新接入的 board 不该对老账号自动可见。
+    await writeFile(
+      usersPath,
+      JSON.stringify({
+        users: [
+          {
+            email: "legacy@x.com",
+            name: "Legacy User",
+            level: "l1",
+            scrypt: { salt: "abc", hash: "def" },
+            active: true,
+            createdAt: "2026-06-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+    const u = await store.get("legacy@x.com");
+    expect(u?.boards).toEqual([]);
+    expect(u?.team).toBeUndefined();
+  });
+
+  it("keeps boards and team through a write/read roundtrip", async () => {
+    await store.upsert(user("dev@x.com", { boards: ["AIP", "PLAT"], team: "MLE" }));
+    // 换一个 store 实例读同一个文件 —— 绕开内存缓存,真正走一遍磁盘 + schema
+    const u = await new FsUserStore(usersPath).get("dev@x.com");
+    expect(u?.boards).toEqual(["AIP", "PLAT"]);
+    expect(u?.team).toBe("MLE");
+  });
+
+  it("手改出来的陌生团队值只丢该字段,不会让整份用户表解析失败", async () => {
+    await writeFile(
+      usersPath,
+      JSON.stringify({
+        users: [
+          { email: "a@x.com", name: "A", level: "l1", team: "研发一部", scrypt: { salt: "s", hash: "h" }, active: true, createdAt: "2026-06-01T00:00:00.000Z" },
+          { email: "b@x.com", name: "B", level: "l2", team: "Art", scrypt: { salt: "s", hash: "h" }, active: true, createdAt: "2026-06-01T00:00:00.000Z" },
+        ],
+      }),
+    );
+    const all = await store.all();
+    expect(all.length).toBe(2); // 两个人都还在 —— 没有因为一个坏值把所有人挡在门外
+    expect(all[0].team).toBeUndefined();
+    expect(all[1].team).toBe("Art");
   });
 });

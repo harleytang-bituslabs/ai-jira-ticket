@@ -6,7 +6,7 @@
  * 新部署的第一个访客就撞墙。
  */
 
-import { listUsers, searchIssues } from "../../clients/jira-client.js";
+import { listAssignableUsers, searchIssues } from "../../clients/jira-client.js";
 import type { ResolvedConfig } from "../../core/config.js";
 import { readProjectMeta, writeIssuesCache, writeUsersCache } from "../../core/spec-cache.js";
 import { syncSpec } from "../../core/sync-spec.js";
@@ -26,7 +26,7 @@ export async function refreshAll(config: ResolvedConfig): Promise<RefreshResult>
     fetchedAt: new Date().toISOString(),
     issues,
   });
-  const users = await listUsers();
+  const users = await listAssignableUsers(config.projectKey);
   await writeUsersCache(config.cacheDir, { fetchedAt: new Date().toISOString(), total: users.length, users });
   return {
     spec: spec.sources.map((s) => `《${s.title}》v${s.version ?? "?"}`).join("、"),

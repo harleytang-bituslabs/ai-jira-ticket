@@ -25,6 +25,9 @@ export const PRIORITY_COLORS: Record<string, string> = {
 
 export const LEVEL_LABELS: Record<UserLevel, string> = { l1: "普通", l2: "高级", admin: "管理员" };
 
+/** 团队标签的可选项。与服务端 src/stores/user-store.ts 的 TEAMS 必须一致。 */
+export const TEAMS = ["AI", "MLE", "Art", "Devops", "BO", "Leader"] as const;
+
 /** 开票表单进来时预选的类型（团队日常开的绝大多数是子任务）。 */
 export const DEFAULT_TYPE = "Sub-task";
 

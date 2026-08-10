@@ -16,6 +16,10 @@ import { atomicWrite } from "../utils/fs.js";
 export const USER_LEVELS = ["l1", "l2", "admin"] as const;
 export type UserLevel = (typeof USER_LEVELS)[number];
 
+/** 可选的团队标签。纯展示,不参与权限;前端下拉框用的是 web/src/constants.ts 里的同一份。 */
+export const TEAMS = ["AI", "MLE", "Art", "Devops", "BO", "Leader"] as const;
+export type Team = (typeof TEAMS)[number];
+
 /**
  * 账号标识:工作邮箱,或纯用户名(如内建的 admin)。必须以字母数字开头 ——
  * 既排除 ".."/"." 这类路径穿越,也排除 S3 key 里的怪字符(草稿目录名就是它)。
@@ -23,12 +27,22 @@ export type UserLevel = (typeof USER_LEVELS)[number];
 export const ACCOUNT_ID_RE = /^[a-z0-9][\w.+-]*(@[\w.-]+)?$/i;
 
 const UserRecordSchema = z.object({
-  /** 登录标识:邮箱或用户名,唯一(大小写不敏感)。 */
+  /** 登录标识:工作邮箱(内建 admin 是纯用户名),唯一(大小写不敏感)。同时就是此人在 Jira 上的身份。 */
   email: z.string().min(3),
   name: z.string().min(1),
-  /** Jira 账号邮箱与登录邮箱不一致时由管理员配置;缺省即用 email。 */
-  jiraEmail: z.string().optional(),
   level: z.enum(USER_LEVELS),
+  /**
+   * 可见 board 的 projectKey 列表 —— 权限的唯一依据(见 server/services/policy.ts)。
+   * 缺省为空,即「什么都看不到」:新接入的 board 必须由管理员显式授权,不会
+   * 对老账号自动可见。admin 不受此字段约束,恒定可见全部 board。
+   */
+  boards: z.array(z.string()).default([]),
+  /**
+   * 纯展示标签(管理页、历史分组),不参与任何权限判断。
+   * 用 .catch 而非硬校验:手改过的 users.json 出现陌生值时只丢掉这一个字段,
+   * 不至于整份文档解析失败把所有人挡在门外。写入侧在路由层严格校验。
+   */
+  team: z.enum(TEAMS).optional().catch(undefined),
   /** scrypt 参数由 server/session.ts 生成;此处只负责存取。 */
   scrypt: z.object({ salt: z.string(), hash: z.string() }),
   active: z.boolean().default(true),

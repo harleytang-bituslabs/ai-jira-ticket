@@ -14,6 +14,7 @@ import { hashPassword } from "../src/server/session.js";
 const ALICE = "alice@example.com"; // l1
 const BOB = "bob@example.com"; // l2
 const CAROL = "carol@example.com"; // admin
+const NOBOARD = "noboard@example.com"; // l2,但没有任何可见 board
 const PASSWORD = "hunter2hunter2";
 
 let app: ReturnType<typeof buildApp>;
@@ -103,10 +104,14 @@ beforeAll(async () => {
   drafts = new FsDraftStore(draftsDir);
   const users = new FsUserStore(join(dataDir, "users.json"));
   const scrypt = await hashPassword(PASSWORD);
-  await users.upsert({ email: ALICE, name: "Alice", level: "l1", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
-  await users.upsert({ email: BOB, name: "Bob", level: "l2", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
-  await users.upsert({ email: "gone@example.com", name: "Gone", level: "l1", scrypt, active: false, createdAt: "2026-07-01T00:00:00.000Z" });
-  await users.upsert({ email: CAROL, name: "Carol", level: "admin", scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z" });
+  const base = { scrypt, active: true, createdAt: "2026-07-01T00:00:00.000Z", boards: ["AIP"] };
+  await users.upsert({ email: ALICE, name: "Alice", level: "l1", ...base });
+  await users.upsert({ email: BOB, name: "Bob", level: "l2", ...base, team: "MLE" });
+  await users.upsert({ email: "gone@example.com", name: "Gone", level: "l1", ...base, active: false });
+  // admin 恒定可见全部 board —— 故意给空 boards,验证它不受该字段约束
+  await users.upsert({ email: CAROL, name: "Carol", level: "admin", ...base, boards: [] });
+  // 已建号但还没被授权任何 board 的人(升级后的默认状态)
+  await users.upsert({ email: NOBOARD, name: "Dave", level: "l2", ...base, boards: [] });
 
   app = buildApp(config, { drafts, users, sessionSecret: "test-secret" });
 });
@@ -152,8 +157,10 @@ describe("auth", () => {
   it("login → /api/me → logout → 401", async () => {
     const agent = await login(ALICE);
     const me = await agent.get("/api/me");
-    expect(me.body.user).toMatchObject({ email: ALICE, name: "Alice", level: "l1", jiraEmail: ALICE });
+    expect(me.body.user).toMatchObject({ email: ALICE, name: "Alice", level: "l1" });
     expect(me.body.user.scrypt).toBeUndefined();
+    // 每个人都用工作邮箱登录,不再有独立的 Jira 邮箱概念
+    expect(me.body.user.jiraEmail).toBeUndefined();
 
     await agent.post("/api/logout");
     const after = await agent.get("/api/me");
@@ -286,6 +293,38 @@ describe("draft APIs are user-scoped", () => {
     expect(r.body.draft.tickets[0].assignee).toBe(ALICE);
   });
 
+  it("board 不在可见列表内的用户不能保存该 board 的草稿", async () => {
+    const draft = mkDraft([ticket("t1")], "2026-07-20T08:00:00.000Z");
+    const saved = await drafts.write(NOBOARD, draft);
+    const agent = await login(NOBOARD);
+    const r = await agent.put(`/api/drafts/${saved.id}`).send({ draft });
+    expect(r.status).toBe(403);
+    expect(r.body.error).toContain("AIP");
+  });
+
+  it("board 不在可见列表内的用户连生成都发不出去(LLM 调用前就拒)", async () => {
+    const agent = await login(NOBOARD);
+    const r = await agent.post("/api/draft").send({ input: "随便写点什么" });
+    expect(r.status).toBe(403);
+    expect(r.body.error).toContain("AIP");
+  });
+
+  it("board 在可见列表内的 L2 照常保存", async () => {
+    const draft = mkDraft([ticket("t1")], "2026-07-20T09:00:00.000Z");
+    const saved = await drafts.write(BOB, draft);
+    const agent = await login(BOB);
+    const r = await agent.put(`/api/drafts/${saved.id}`).send({ draft });
+    expect(r.status).toBe(200);
+  });
+
+  it("admin 的 boards 为空也照样能开票(恒定可见全部 board)", async () => {
+    const draft = mkDraft([ticket("t1")], "2026-07-20T10:00:00.000Z");
+    const saved = await drafts.write(CAROL, draft);
+    const agent = await login(CAROL);
+    const r = await agent.put(`/api/drafts/${saved.id}`).send({ draft });
+    expect(r.status).toBe(200);
+  });
+
   it("scope=all: admin sees every owner's records; L2 gets 403", async () => {
     await drafts.write(ALICE, mkDraft([ticket("t1")], "2026-07-08T08:00:00.000Z"));
     await drafts.write(BOB, mkDraft([ticket("t1")], "2026-07-08T09:00:00.000Z"));
@@ -357,6 +396,104 @@ describe("admin user management", () => {
     expect((await carol.post("/api/admin/users").send({ email: "dave@example.com", name: "D", password: "davedavedave", level: "l1" })).status).toBe(409);
     expect((await carol.post("/api/admin/users").send({ email: "eve@example.com", name: "Eve", password: "short", level: "l1" })).status).toBe(400);
     expect((await carol.post("/api/admin/users").send({ email: "eve@example.com", name: "Eve", password: "longenough1", level: "boss" })).status).toBe(400);
+  });
+
+  it("建号时可以直接授权 board 和团队,新人当场就能开票", async () => {
+    const carol = await login(CAROL);
+    const created = await carol.post("/api/admin/users").send({
+      email: "grace@example.com",
+      name: "Grace",
+      password: "gracegrace1",
+      level: "l2",
+      boards: ["AIP"],
+      team: "BO",
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.user).toMatchObject({ boards: ["AIP"], team: "BO" });
+
+    const grace = await login("grace@example.com", "gracegrace1");
+    const draft = mkDraft([ticket("t1")], "2026-07-21T08:00:00.000Z");
+    const saved = await drafts.write("grace@example.com", draft);
+    expect((await grace.put(`/api/drafts/${saved.id}`).send({ draft })).status).toBe(200);
+  });
+
+  it("不给 boards 时新账号默认什么都看不到", async () => {
+    const carol = await login(CAROL);
+    const created = await carol.post("/api/admin/users").send({
+      email: "heidi@example.com",
+      name: "Heidi",
+      password: "heidiheidi1",
+      level: "l2",
+    });
+    expect(created.body.user.boards).toEqual([]);
+
+    const heidi = await login("heidi@example.com", "heidiheidi1");
+    const draft = mkDraft([ticket("t1")], "2026-07-21T09:00:00.000Z");
+    const saved = await drafts.write("heidi@example.com", draft);
+    expect((await heidi.put(`/api/drafts/${saved.id}`).send({ draft })).status).toBe(403);
+  });
+
+  it("拒绝没接入过的 board key", async () => {
+    const carol = await login(CAROL);
+    const r = await carol.post("/api/admin/users").send({
+      email: "ivan@example.com",
+      name: "Ivan",
+      password: "ivanivanivan",
+      level: "l2",
+      boards: ["NOSUCH"],
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toContain("NOSUCH");
+  });
+
+  it("PATCH 能改 boards 和团队,改完立刻生效", async () => {
+    const carol = await login(CAROL);
+    await carol.post("/api/admin/users").send({ email: "judy@example.com", name: "Judy", password: "judyjudyjudy", level: "l2" });
+
+    const draft = mkDraft([ticket("t1")], "2026-07-21T10:00:00.000Z");
+    const saved = await drafts.write("judy@example.com", draft);
+    const judy = await login("judy@example.com", "judyjudyjudy");
+    expect((await judy.put(`/api/drafts/${saved.id}`).send({ draft })).status).toBe(403);
+
+    const up = await carol.patch("/api/admin/users/judy@example.com").send({ boards: ["AIP"], team: "Devops" });
+    expect(up.body.user).toMatchObject({ boards: ["AIP"], team: "Devops" });
+    expect((await judy.put(`/api/drafts/${saved.id}`).send({ draft })).status).toBe(200);
+  });
+
+  it("/api/me 带上 boards 和团队,前端才知道自己能看什么", async () => {
+    const agent = await login(BOB);
+    const me = await agent.get("/api/me");
+    expect(me.body.user).toMatchObject({ boards: ["AIP"], team: "MLE" });
+  });
+
+  it("团队只接受预设的几个,写错的拼法直接拒", async () => {
+    const carol = await login(CAROL);
+    const bad = await carol.post("/api/admin/users").send({
+      email: "kate@example.com",
+      name: "Kate",
+      password: "katekatekate",
+      level: "l1",
+      team: "研发一部",
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toContain("研发一部");
+
+    const ok = await carol.post("/api/admin/users").send({
+      email: "kate@example.com",
+      name: "Kate",
+      password: "katekatekate",
+      level: "l1",
+      team: "Art",
+    });
+    expect(ok.status).toBe(201);
+    expect(ok.body.user.team).toBe("Art");
+  });
+
+  it("PATCH 传空字符串可以清掉团队", async () => {
+    const carol = await login(CAROL);
+    await carol.post("/api/admin/users").send({ email: "liam@example.com", name: "Liam", password: "liamliamliam", level: "l1", team: "Devops" });
+    const cleared = await carol.patch("/api/admin/users/liam@example.com").send({ team: "" });
+    expect(cleared.body.user.team).toBeNull();
   });
 
   it("PATCH updates level / active / password; deactivation blocks login at once", async () => {

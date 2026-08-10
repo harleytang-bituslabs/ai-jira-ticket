@@ -19,6 +19,7 @@ export async function bootstrapAdmin(users: UserStore): Promise<void> {
     email,
     name: process.env.AJT_ADMIN_NAME?.trim() || email.split("@")[0]!,
     level: "admin",
+    boards: [], // admin 恒定可见全部 board,这里不必列
     scrypt: await hashPassword(password),
     active: true,
     createdAt: new Date().toISOString(),

@@ -40,7 +40,7 @@ export function ComposeForm({
   const [priority, setPriority] = useState<string | null>(initialType === "Sub-task" ? null : defaultPriority(meta));
   const [parentEpic, setParentEpic] = useState("");
   const [parent, setParent] = useState("");
-  const [assignee, setAssignee] = useState<string | null>(isL1 ? user.jiraEmail : null);
+  const [assignee, setAssignee] = useState<string | null>(isL1 ? user.email : null);
   const [assigneeText, setAssigneeText] = useState(""); // 大名册模式下输入框的显示文本
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -152,7 +152,7 @@ export function ComposeForm({
           issueType: type,
           priority,
           parentKey: parent || null,
-          assignee: isL1 ? user.jiraEmail : assignee,
+          assignee: isL1 ? user.email : assignee,
           startDate: startDate || null,
           dueDate: dueDate || null,
         },

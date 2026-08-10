@@ -7,11 +7,14 @@ import { clearLoginFailures, loginBlocked, recordLoginFailure } from "../middlew
 import { SESSION_COOKIE, SESSION_TTL_MS, createSessionToken, hashPassword, verifyPassword } from "../session.js";
 
 /** 对前端暴露的用户信息(绝不含口令哈希)。 */
-export const publicUser = (u: UserRecord): { email: string; name: string; level: string; jiraEmail: string } => ({
+export const publicUser = (
+  u: UserRecord,
+): { email: string; name: string; level: string; boards: string[]; team: string | null } => ({
   email: u.email,
   name: u.name,
   level: u.level,
-  jiraEmail: u.jiraEmail ?? u.email,
+  boards: u.boards,
+  team: u.team ?? null,
 });
 
 export function authRoutes(users: UserStore, secret: string): Router {

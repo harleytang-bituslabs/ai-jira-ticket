@@ -9,8 +9,10 @@ export interface User {
   email: string;
   name: string;
   level: UserLevel;
-  /** 在 Jira 上的账号邮箱（登录邮箱不同时由管理员配置），指派/筛选都用它。 */
-  jiraEmail: string;
+  /** 可见 board 的 projectKey；admin 恒定可见全部，此列表可能为空。 */
+  boards: string[];
+  /** 纯展示标签，不参与权限。 */
+  team: string | null;
 }
 
 export interface Ticket {
@@ -87,8 +89,9 @@ export interface Meta {
 export interface AdminUser {
   email: string;
   name: string;
-  jiraEmail: string | null;
   level: UserLevel;
+  boards: string[];
+  team: string | null;
   active: boolean;
   createdAt: string;
 }

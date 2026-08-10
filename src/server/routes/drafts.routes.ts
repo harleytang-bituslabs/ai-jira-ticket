@@ -20,7 +20,7 @@ import {
   parseComposeDefaults,
   str,
 } from "../services/drafts.js";
-import { enforcePolicy, jiraIdentity } from "../services/policy.js";
+import { assertBoardVisible, enforcePolicy, jiraIdentity } from "../services/policy.js";
 
 export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router {
   const router = Router();
@@ -37,6 +37,7 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore): Router 
       splitCount = n;
     }
     const user = req.user!;
+    assertBoardVisible(user, config.projectKey); // 越权的话连 LLM 都不必调
     const defaults = parseComposeDefaults((body.defaults ?? {}) as Record<string, unknown>);
     // L1 的表单值在进入 AI 之前就矫正:类型不许 Epic,指派锁定本人(生成的内容才对得上人)
     if (user.level === "l1") {

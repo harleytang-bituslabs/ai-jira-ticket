@@ -6,23 +6,48 @@
  */
 
 import { Router } from "express";
-import { ACCOUNT_ID_RE, USER_LEVELS, type UserLevel, type UserRecord, type UserStore } from "../../stores/user-store.js";
+import type { ResolvedConfig } from "../../core/config.js";
+import { ACCOUNT_ID_RE, TEAMS, USER_LEVELS, type Team, type UserLevel, type UserRecord, type UserStore } from "../../stores/user-store.js";
 import { HttpError } from "../middlewares/error.js";
 import { hashPassword } from "../session.js";
 
 const adminView = (u: UserRecord): Record<string, unknown> => ({
   email: u.email,
   name: u.name,
-  jiraEmail: u.jiraEmail ?? null,
   level: u.level,
+  boards: u.boards,
+  team: u.team ?? null,
   active: u.active,
   createdAt: u.createdAt,
 });
 
 const isLevel = (v: unknown): v is UserLevel => typeof v === "string" && (USER_LEVELS as readonly string[]).includes(v);
 
-export function adminRoutes(users: UserStore): Router {
+/** 空串 = 清空;其余必须是预设团队之一。 */
+const parseTeam = (v: unknown): Team | undefined => {
+  if (typeof v !== "string") throw new HttpError(400, "team 须为字符串");
+  const t = v.trim();
+  if (!t) return undefined;
+  if (!(TEAMS as readonly string[]).includes(t)) {
+    throw new HttpError(400, `未知团队: ${t}（可选: ${TEAMS.join("/")}）`);
+  }
+  return t as Team;
+};
+
+export function adminRoutes(config: ResolvedConfig, users: UserStore): Router {
   const router = Router();
+
+  /** 只接受已接入的 board —— 拼错的 key 会变成一个谁也进不去的隐形权限。 */
+  const parseBoards = (v: unknown): string[] => {
+    if (!Array.isArray(v) || v.some((b) => typeof b !== "string")) {
+      throw new HttpError(400, "boards 须为字符串数组");
+    }
+    const known = [config.projectKey];
+    for (const b of v as string[]) {
+      if (!known.includes(b)) throw new HttpError(400, `未接入的 board: ${b}（可选: ${known.join("/")}）`);
+    }
+    return [...new Set(v as string[])];
+  };
 
   router.get("/users", async (_req, res) => {
     res.json({ users: (await users.all()).map(adminView) });
@@ -33,18 +58,20 @@ export function adminRoutes(users: UserStore): Router {
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const password = typeof body.password === "string" ? body.password : "";
-    const jiraEmail = typeof body.jiraEmail === "string" && body.jiraEmail.trim() ? body.jiraEmail.trim().toLowerCase() : undefined;
     if (!ACCOUNT_ID_RE.test(email)) throw new HttpError(400, "登录名须是工作邮箱或纯用户名(字母数字开头)");
     if (!name) throw new HttpError(400, "姓名不能为空");
     if (password.length < 8) throw new HttpError(400, "初始密码至少 8 位");
     if (!isLevel(body.level)) throw new HttpError(400, `level 须为 ${USER_LEVELS.join("/")}`);
     if (await users.get(email)) throw new HttpError(409, `账号 ${email} 已存在`);
 
+    const team = body.team === undefined ? undefined : parseTeam(body.team);
     const user: UserRecord = {
       email,
       name,
-      ...(jiraEmail ? { jiraEmail } : {}),
       level: body.level,
+      // 不给就是空 —— 新账号默认什么 board 都看不到,由管理员显式开通
+      boards: body.boards === undefined ? [] : parseBoards(body.boards),
+      ...(team ? { team } : {}),
       scrypt: await hashPassword(password),
       active: true,
       createdAt: new Date().toISOString(),
@@ -72,11 +99,13 @@ export function adminRoutes(users: UserStore): Router {
       if (typeof body.name !== "string" || !body.name.trim()) throw new HttpError(400, "姓名不能为空");
       next.name = body.name.trim();
     }
-    if (body.jiraEmail !== undefined) {
-      if (typeof body.jiraEmail !== "string") throw new HttpError(400, "jiraEmail 须为字符串");
-      const v = body.jiraEmail.trim().toLowerCase();
-      if (v) next.jiraEmail = v;
-      else delete next.jiraEmail;
+    if (body.boards !== undefined) {
+      next.boards = parseBoards(body.boards);
+    }
+    if (body.team !== undefined) {
+      const t = parseTeam(body.team);
+      if (t) next.team = t;
+      else delete next.team;
     }
     if (body.password !== undefined) {
       if (typeof body.password !== "string" || body.password.length < 8) throw new HttpError(400, "新密码至少 8 位");
