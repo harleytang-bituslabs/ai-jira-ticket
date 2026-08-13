@@ -80,8 +80,11 @@ button:disabled { opacity:.5; cursor:wait; }
 .ticket .head input[type=date] { width:122px; min-width:0; }
 .ticket .head .del { padding:6px 10px; font-size:13px; }
 /* 父级框弹性伸缩：只设下限、上不封顶，吸收行内全部富余宽度；
-   窗口变窄时它先收缩，压到下限后才允许换行（按钮可换行但绝不溢出隐藏） */
-.ticket .head .parent { flex:1 1 auto; min-width:56px; }
+   窗口变窄时它先收缩，压到下限后才允许换行（按钮可换行但绝不溢出隐藏）。
+   basis 必须是 0 不能是 auto：flex 的换行判定发生在收缩之前，用的是假想主尺寸，
+   而 auto 会取选项最宽的那条内容宽（实测 800+px），于是这行在轮到删除按钮之前
+   就被判定放不下，按钮掉到第二行、父级框再缩回去——留下一行空白加一个孤立按钮。 */
+.ticket .head .parent { flex:1 1 0; min-width:56px; }
 .ticket .head .del { white-space:nowrap; }
 .ticket .ro-summary { font-weight:600; }
 .ticket .ro-meta { font-size:13px; color:var(--muted); margin-top:6px; }

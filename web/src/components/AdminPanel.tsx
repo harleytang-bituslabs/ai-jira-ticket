@@ -163,7 +163,7 @@ export function AdminPanel() {
             </select>
           </div>
           <div className="fgroup fTeam">
-            <label>团队（决定高级账号的派活范围）</label>
+            <label>团队</label>
             <select value={nTeam} onChange={(e) => setNTeam(e.target.value)}>
               <option value="">不填</option>
               {TEAMS.map((t) => (
