@@ -10,6 +10,7 @@
  */
 
 import type { NextFunction, Request, Response } from "express";
+import { forbidden, sessionError } from "../../core/errors.js";
 import type { UserRecord, UserStore } from "../../stores/user-store.js";
 import { verifySessionToken } from "../session.js";
 
@@ -36,22 +37,16 @@ export function attachAuth(users: UserStore, secret: string) {
   };
 }
 
-export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!req.user) {
-    res.status(401).json({ error: "未登录或会话已过期" });
-    return;
-  }
+// Express 5 forwards synchronous throws to the error handler, which is what
+// gives these responses a category — 401 alone can no longer be told apart
+// from a provider's 401.
+export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) throw sessionError("session_expired", "未登录或会话已过期");
   next();
 }
 
-export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  if (!req.user) {
-    res.status(401).json({ error: "未登录或会话已过期" });
-    return;
-  }
-  if (req.user.level !== "admin") {
-    res.status(403).json({ error: "需要管理员权限" });
-    return;
-  }
+export function requireAdmin(req: Request, _res: Response, next: NextFunction): void {
+  if (!req.user) throw sessionError("session_expired", "未登录或会话已过期");
+  if (req.user.level !== "admin") throw forbidden("admin_required", "需要管理员权限");
   next();
 }

@@ -171,6 +171,8 @@ describe("auth", () => {
     for (const probe of [request(app).get("/api/meta"), request(app).get("/api/drafts")]) {
       const r = await probe;
       expect(r.status).toBe(401);
+      // 分类字段:前端据此才敢弹回登录页,而不是见 401 就登出
+      expect(r.body.category).toBe("session");
     }
   });
 
@@ -241,6 +243,8 @@ describe("auth", () => {
     const agent = await login(BOB);
     const bad = await agent.post("/api/me/password").send({ oldPassword: "nope", newPassword: "longenough1" });
     expect(bad.status).toBe(401);
+    // credentials 而非 session —— 打错一个字不该把本标签页的会话清掉
+    expect(bad.body.category).toBe("credentials");
 
     const ok = await agent.post("/api/me/password").send({ oldPassword: PASSWORD, newPassword: "longenough1" });
     expect(ok.status).toBe(200);
@@ -507,7 +511,9 @@ describe("admin user management", () => {
   it("is admin-gated: anonymous → 401, L2 → 403", async () => {
     expect((await request(app).get("/api/admin/users")).status).toBe(401);
     const bob = await login(BOB);
-    expect((await bob.get("/api/admin/users")).status).toBe(403);
+    const denied = await bob.get("/api/admin/users");
+    expect(denied.status).toBe(403);
+    expect(denied.body.category).toBe("forbidden");
   });
 
   it("lists users without leaking password hashes", async () => {
