@@ -12,6 +12,7 @@
 
 import type { JiraIssueSummary, ProjectMeta } from "../clients/jira-client.js";
 import type { CacheStore } from "../stores/cache-store.js";
+import { invalid } from "./errors.js";
 
 const SPEC_FILE = "spec.md";
 const META_FILE = "project-meta.json";
@@ -40,11 +41,15 @@ export async function writeSpecCache(store: CacheStore, cache: SpecCache): Promi
 export async function readSpecCache(store: CacheStore): Promise<SpecCache> {
   const raw = await store.read(SPEC_FILE);
   if (raw === null) {
-    throw new Error(`No ${SPEC_FILE} in the cache — run \`ajt sync-spec\` (or hit 「更新config」) first`);
+    throw invalid("cache_missing", "参考数据还没准备好 —— 请点「更新config」拉取后重试", {
+      detail: `No ${SPEC_FILE} in the cache; run \`ajt sync-spec\` or POST /api/refresh`,
+    });
   }
   const m = /^---\n([\s\S]*?)\n---\n/.exec(raw);
   if (!m) {
-    throw new Error(`${SPEC_FILE} is missing its frontmatter — re-run \`ajt sync-spec\``);
+    throw invalid("cache_missing", "参考数据格式不完整 —— 请点「更新config」重新拉取", {
+      detail: `${SPEC_FILE} is missing its frontmatter; re-run \`ajt sync-spec\``,
+    });
   }
   const fields = new Map(
     m[1].split("\n").map((line) => {
@@ -66,7 +71,9 @@ export async function writeProjectMeta(store: CacheStore, meta: ProjectMeta): Pr
 export async function readProjectMeta(store: CacheStore): Promise<ProjectMeta> {
   const raw = await store.read(META_FILE);
   if (raw === null) {
-    throw new Error(`No ${META_FILE} in the cache — run \`ajt sync-spec\` (or hit 「更新config」) first`);
+    throw invalid("cache_missing", "项目配置还没准备好 —— 请点「更新config」拉取后重试", {
+      detail: `No ${META_FILE} in the cache; run \`ajt sync-spec\` or POST /api/refresh`,
+    });
   }
   return JSON.parse(raw) as ProjectMeta;
 }
@@ -92,7 +99,9 @@ export async function writeIssuesCache(store: CacheStore, cache: IssuesCache): P
 export async function readIssuesCache(store: CacheStore): Promise<IssuesCache> {
   const raw = await store.read(ISSUES_FILE);
   if (raw === null) {
-    throw new Error(`No ${ISSUES_FILE} in the cache — run \`npm run fetch-issues\` (or hit 「更新config」) first`);
+    throw invalid("cache_missing", "看板快照还没准备好 —— 请点「更新config」拉取后重试", {
+      detail: `No ${ISSUES_FILE} in the cache; run \`npm run fetch-issues\` or POST /api/refresh`,
+    });
   }
   return JSON.parse(raw) as IssuesCache;
 }

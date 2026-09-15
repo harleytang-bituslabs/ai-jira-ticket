@@ -8,6 +8,7 @@
 import { Router } from "express";
 import type { ResolvedConfig } from "../../core/config.js";
 import { draftTickets } from "../../core/draft.js";
+import { isAppError, partial } from "../../core/errors.js";
 import { DraftFileSchema, type DraftFile } from "../../core/schema.js";
 import { readProjectMeta } from "../../core/spec-cache.js";
 import type { CacheStore } from "../../stores/cache-store.js";
@@ -111,9 +112,17 @@ export function draftsRoutes(config: ResolvedConfig, store: DraftStore, cache: C
       });
     } catch (err) {
       // 提交是断点续传式的：部分进度已由 persist 落盘，连着错误一起回给前端。
-      const latest = await store.read(owner, id).catch(() => draft);
-      res.status(400).json({ error: err instanceof Error ? err.message : String(err), id, draft: latest });
-      return;
+      // 只补上 core 层拿不到的记录 id 与落盘后的最新草稿，其余交给 errorHandler
+      // 统一定状态码、记日志、发排查码。
+      if (isAppError(err) && err.category === "partial") {
+        const latest = await store.read(owner, id).catch(() => draft);
+        throw partial(
+          err.message,
+          { id, draft: latest, created: err.recovery?.created ?? 0, total: err.recovery?.total ?? draft.tickets.length },
+          (err as { cause?: unknown }).cause,
+        );
+      }
+      throw err;
     }
     res.json({ id, draft: result });
   });

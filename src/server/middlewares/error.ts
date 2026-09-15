@@ -89,6 +89,10 @@ export interface WireError {
   requestId: string;
   retryAfter?: number;
   recovery?: PartialRecovery;
+  /** @deprecated Migration aliases for the partial-submit payload the Editor
+   *  reads as `e.data.draft` today. Drop once it reads `recovery` instead. */
+  id?: string;
+  draft?: unknown;
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : String(v));
@@ -180,7 +184,9 @@ export function toWire(e: AppError, requestId: string): WireError {
     requestId,
     ...(e.detail !== undefined ? { detail: e.detail } : {}),
     ...(e.retryAfter !== undefined ? { retryAfter: e.retryAfter } : {}),
-    ...(e.recovery !== undefined ? { recovery: e.recovery } : {}),
+    ...(e.recovery !== undefined
+      ? { recovery: e.recovery, id: e.recovery.id, draft: e.recovery.draft } // aliases: see WireError
+      : {}),
   };
 }
 

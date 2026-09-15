@@ -18,6 +18,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { atomicWrite } from "../utils/fs.js";
+import { isNoSuchKey, s3Error } from "./s3-errors.js";
 
 export interface CacheStore {
   /** Null when the entry doesn't exist yet (fresh deployment). */
@@ -85,8 +86,7 @@ export class S3CacheStore implements CacheStore {
       const r = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
       value = (await r.Body?.transformToString()) ?? null;
     } catch (err) {
-      const name = (err as { name?: string }).name;
-      if (name !== "NoSuchKey" && name !== "NotFound") throw err;
+      if (!isNoSuchKey(err)) throw s3Error(err, `GetObject ${key}`);
       value = null;
     }
     this.memo.set(key, { value, at: Date.now() });
@@ -95,14 +95,18 @@ export class S3CacheStore implements CacheStore {
 
   async write(name: string, body: string): Promise<void> {
     const key = this.key(name);
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: body,
-        ContentType: name.endsWith(".json") ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
-      }),
-    );
+    try {
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: body,
+          ContentType: name.endsWith(".json") ? "application/json; charset=utf-8" : "text/markdown; charset=utf-8",
+        }),
+      );
+    } catch (err) {
+      throw s3Error(err, `PutObject ${key}`);
+    }
     this.memo.set(key, { value: body, at: Date.now() });
   }
 }

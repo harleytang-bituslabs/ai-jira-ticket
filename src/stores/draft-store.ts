@@ -19,8 +19,10 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3";
 import { assertDraftId, draftBaseName } from "../core/draft-files.js";
+import { invalid, isAppError } from "../core/errors.js";
 import { DraftFileSchema, type DraftFile } from "../core/schema.js";
 import { atomicWrite } from "../utils/fs.js";
+import { isNoSuchKey, s3Error } from "./s3-errors.js";
 import { ACCOUNT_ID_RE } from "./user-store.js";
 
 export interface DraftListEntry {
@@ -98,7 +100,7 @@ export class FsDraftStore implements DraftStore {
     try {
       raw = await readFile(join(this.dir(owner), `${id}.json`), "utf-8");
     } catch {
-      throw new Error(`草稿 ${id} 不存在`);
+      throw invalid("draft_not_found", `草稿 ${id} 不存在`);
     }
     return DraftFileSchema.parse(JSON.parse(raw));
   }
@@ -153,9 +155,14 @@ export class S3DraftStore implements DraftStore {
     const keys: string[] = [];
     let token: string | undefined;
     do {
-      const page = await this.s3.send(
-        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
-      );
+      let page;
+      try {
+        page = await this.s3.send(
+          new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
+        );
+      } catch (err) {
+        throw s3Error(err, `ListObjectsV2 ${prefix}`);
+      }
       for (const o of page.Contents ?? []) if (o.Key?.endsWith(".json")) keys.push(o.Key);
       token = page.IsTruncated ? page.NextContinuationToken : undefined;
     } while (token);
@@ -182,27 +189,39 @@ export class S3DraftStore implements DraftStore {
   }
 
   async read(owner: string, id: string): Promise<DraftFile> {
+    const key = this.key(owner, id);
     try {
-      return await this.getObject(this.key(owner, id));
+      return await this.getObject(key);
     } catch (err) {
-      if ((err as { name?: string }).name === "NoSuchKey") throw new Error(`草稿 ${id} 不存在`);
-      throw err;
+      if (isNoSuchKey(err)) throw invalid("draft_not_found", `草稿 ${id} 不存在`);
+      if (isAppError(err)) throw err; // 已分类的(空对象/结构不合法)照原样上抛
+      throw s3Error(err, `GetObject ${key}`);
     }
   }
 
   async write(owner: string, draft: DraftFile, id = draftBaseName(draft)): Promise<{ id: string }> {
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: this.key(owner, id),
-        Body: JSON.stringify(draft, null, 2) + "\n",
-        ContentType: "application/json; charset=utf-8",
-      }),
-    );
+    const key = this.key(owner, id);
+    try {
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          Body: JSON.stringify(draft, null, 2) + "\n",
+          ContentType: "application/json; charset=utf-8",
+        }),
+      );
+    } catch (err) {
+      throw s3Error(err, `PutObject ${key}`);
+    }
     return { id };
   }
 
   async delete(owner: string, id: string): Promise<void> {
-    await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(owner, id) }));
+    const key = this.key(owner, id);
+    try {
+      await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+    } catch (err) {
+      throw s3Error(err, `DeleteObject ${key}`);
+    }
   }
 }

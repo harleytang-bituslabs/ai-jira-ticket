@@ -11,6 +11,7 @@
 
 import { confluenceHtmlToMarkdown, type ConfluenceMarkdownOptions } from "../utils/html-to-markdown.js";
 import { getAtlassianAuthHeader, getAtlassianBaseUrl } from "./atlassian-auth.js";
+import { atlassianError, atlassianNetworkError } from "./atlassian-errors.js";
 
 // ─── URL parsing ────────────────────────────────────────────────────────────
 
@@ -73,29 +74,16 @@ async function fetchPageBody(
 ): Promise<PageBodyResponse> {
   const base = getAtlassianBaseUrl();
   const path = `/wiki/api/v2/pages/${pageId}?body-format=${format}`;
-  const res = await fetch(`${base}${path}`, {
-    headers: { Authorization: getAtlassianAuthHeader(), Accept: "application/json" },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) {
-    if (res.status === 401) {
-      throw new Error(
-        "Confluence rejected the API token (401). Regenerate at id.atlassian.com/manage-profile/security/api-tokens and update CONFLUENCE_API_TOKEN.",
-      );
-    }
-    if (res.status === 403) {
-      throw new Error(
-        `Confluence denied access to page ${pageId} (403). The token's owner must be granted view permission on the space.`,
-      );
-    }
-    if (res.status === 404) {
-      throw new Error(
-        `Confluence page ${pageId} not found (404). Verify the URL or that the page hasn't been deleted/moved.`,
-      );
-    }
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Confluence API ${path} → HTTP ${res.status}: ${text}`);
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      headers: { Authorization: getAtlassianAuthHeader(), Accept: "application/json" },
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    throw atlassianNetworkError("Confluence", path, err);
   }
+  if (!res.ok) throw await atlassianError("Confluence", res, path);
   return (await res.json()) as PageBodyResponse;
 }
 

@@ -14,17 +14,54 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { z } from "zod";
+import { internal, invalid, upstream, type AppError } from "../core/errors.js";
 
 let client: Anthropic | null = null;
 
 function getClient(): Anthropic {
   if (!client) {
     if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY is not configured — set it in .env");
+      throw internal("anthropic_unconfigured", "AI 服务未配置，请联系管理员", {
+        detail: "ANTHROPIC_API_KEY is not set — put it in .env",
+      });
     }
     client = new Anthropic({ maxRetries: 4 });
   }
   return client;
+}
+
+/**
+ * The SDK's APIError carries a top-level `status`. Letting it travel meant a
+ * revoked API key surfaced to the browser as a 401, which the frontend reads as
+ * "your session expired" — one dead key logged everybody out. Provenance is
+ * recorded here, while we still know the 401 came from Anthropic.
+ *
+ * maxRetries has already been exhausted by the time anything escapes, so every
+ * case below is terminal.
+ */
+function anthropicError(err: unknown): AppError {
+  if (!(err instanceof Anthropic.APIError)) {
+    const name = (err as { name?: string }).name;
+    if (name === "TimeoutError" || name === "AbortError") {
+      return upstream("upstream_timeout", "AI 服务未在超时时间内响应，请重试", { cause: err });
+    }
+    return upstream("anthropic_unavailable", "AI 服务暂时不可用，请稍后重试", {
+      detail: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+      cause: err,
+    });
+  }
+  const detail = `HTTP ${String(err.status)} ${err.type ?? ""} ${err.message}`.trim();
+  if (err.status === 401 || err.status === 403 || err.status === 402) {
+    return upstream("anthropic_auth", "AI 服务认证失败，请联系管理员检查 API key", { detail, cause: err });
+  }
+  if (err.status === 429 || err.status === 529 || (typeof err.status === "number" && err.status >= 500)) {
+    return upstream("anthropic_unavailable", "AI 服务繁忙或暂时不可用，请稍后重试", { detail, cause: err });
+  }
+  if (err.status === 400) {
+    // Our request was malformed — a bug on our side, not the user's input.
+    return internal("anthropic_bad_request", "AI 请求构造有误，请把排查码发给维护者", { detail, cause: err });
+  }
+  return upstream("anthropic_unavailable", "AI 服务返回了错误，请稍后重试", { detail, cause: err });
 }
 
 export interface ChatMessage {
@@ -51,20 +88,29 @@ export async function generateStructured<Schema extends z.ZodType>(opts: {
   schema: Schema;
   maxTokens?: number;
 }): Promise<StructuredResult<z.infer<Schema>>> {
-  const response = await getClient().messages.parse({
-    model: opts.model,
-    max_tokens: opts.maxTokens ?? 16_000,
-    thinking: { type: "adaptive" },
-    system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
-    output_config: { format: zodOutputFormat(opts.schema) },
-    messages: opts.messages,
-  });
+  let response;
+  try {
+    response = await getClient().messages.parse({
+      model: opts.model,
+      max_tokens: opts.maxTokens ?? 16_000,
+      thinking: { type: "adaptive" },
+      system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
+      output_config: { format: zodOutputFormat(opts.schema) },
+      messages: opts.messages,
+    });
+  } catch (err) {
+    throw anthropicError(err);
+  }
 
   if (response.stop_reason === "refusal") {
-    throw new Error("The model declined this request (stop_reason: refusal). Rephrase the input and try again.");
+    throw invalid("llm_refusal", "模型拒绝了这个请求，请换个说法重试", {
+      detail: "stop_reason: refusal",
+    });
   }
   if (response.stop_reason === "max_tokens") {
-    throw new Error("Model output hit the token limit before completing — shorten the input or raise maxTokens.");
+    throw invalid("llm_truncated", "内容过长，模型没写完就到上限了 —— 请缩短输入或减少拆票数量", {
+      detail: "stop_reason: max_tokens",
+    });
   }
   if (response.parsed_output == null) {
     const text = response.content
@@ -72,7 +118,9 @@ export async function generateStructured<Schema extends z.ZodType>(opts: {
       .map((b) => b.text)
       .join("")
       .slice(0, 300);
-    throw new Error(`Model output failed schema validation. First 300 chars:\n${text}`);
+    throw upstream("llm_schema", "模型输出不符合预期格式，请重试", {
+      detail: `Model output failed schema validation. First 300 chars:\n${text}`,
+    });
   }
 
   const u = response.usage;

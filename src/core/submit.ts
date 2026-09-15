@@ -10,6 +10,7 @@
 import { createIssue, createIssueLink, findUserAccountId, type ProjectMeta } from "../clients/jira-client.js";
 import { markdownToAdf } from "../utils/adf.js";
 import type { ResolvedConfig } from "./config.js";
+import { partial } from "./errors.js";
 import { DraftFileSchema, isLocalId, type DraftFile, type Ticket } from "./schema.js";
 
 export interface SubmitOptions {
@@ -194,8 +195,12 @@ export async function submitDraft(input: DraftFile, opts: SubmitOptions): Promis
   } catch (err) {
     await persist(draft);
     const done = draft.tickets.filter((t) => t.jiraKey).length;
-    throw new Error(
+    // 保留 cause:原来这里把错误对象拍平成一个字符串,Jira 的字段级诊断
+    // (唯一能查出必填自定义字段为何被拒的东西)就此丢失。
+    throw partial(
       `提交在创建 ${done}/${draft.tickets.length} 张票后中断。\n${err instanceof Error ? err.message : String(err)}\n修复草稿后重跑同一命令，已创建的内容会自动跳过。`,
+      { id: "", draft, created: done, total: draft.tickets.length },
+      err,
     );
   }
 

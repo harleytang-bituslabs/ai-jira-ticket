@@ -326,8 +326,10 @@ describe("draft APIs are user-scoped", () => {
     expect(bobList.body.drafts.length).toBe(1);
 
     // Bob 拿 Alice 的 id 读/删都无效
+    // 404:Bob 的文件夹里没有这条记录。Alice 的记录是否存在不泄露给他。
     const stolenRead = await bob.put(`/api/drafts/${a.id}`).send({ draft: mkDraft([ticket("t1")], "2026-07-01T08:00:00.000Z") });
-    expect(stolenRead.status).toBe(400);
+    expect(stolenRead.status).toBe(404);
+    expect(stolenRead.body.code).toBe("draft_not_found");
     await bob.delete(`/api/drafts/${a.id}`);
     expect((await alice.get("/api/drafts")).body.drafts.length).toBe(1); // Alice 的还在
   });

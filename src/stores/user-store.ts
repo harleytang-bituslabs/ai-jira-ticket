@@ -12,6 +12,7 @@ import { dirname } from "node:path";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { z } from "zod";
 import { atomicWrite } from "../utils/fs.js";
+import { isNoSuchKey, s3Error } from "./s3-errors.js";
 
 export const USER_LEVELS = ["l1", "l2", "admin"] as const;
 export type UserLevel = (typeof USER_LEVELS)[number];
@@ -125,19 +126,25 @@ export class S3UserStore extends JsonDocUserStore {
       const r = await this.s3.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.key }));
       return (await r.Body?.transformToString()) ?? null;
     } catch (err) {
-      if ((err as { name?: string }).name === "NoSuchKey") return null;
-      throw err;
+      if (isNoSuchKey(err)) return null;
+      // Runs inside attachAuth on every request, so an S3 outage used to 400
+      // every route with the bucket name in the message.
+      throw s3Error(err, `GetObject ${this.key}`);
     }
   }
 
   protected async saveDoc(json: string): Promise<void> {
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: this.key,
-        Body: json,
-        ContentType: "application/json; charset=utf-8",
-      }),
-    );
+    try {
+      await this.s3.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: this.key,
+          Body: json,
+          ContentType: "application/json; charset=utf-8",
+        }),
+      );
+    } catch (err) {
+      throw s3Error(err, `PutObject ${this.key}`);
+    }
   }
 }

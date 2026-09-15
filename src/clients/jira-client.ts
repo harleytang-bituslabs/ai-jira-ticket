@@ -2,15 +2,16 @@
  * Jira Cloud REST v3 client.
  *
  * Same conventions as confluence-client: native fetch, 30s timeout, and
- * per-status errors that tell the user what to do. Jira's structured error
- * bodies ({ errorMessages, errors: { field: msg } }) are folded into thrown
- * messages — that detail is the only way to diagnose required-custom-field
- * failures on create.
+ * classification through ./atlassian-errors.js. Jira's structured error bodies
+ * ({ errorMessages, errors: { field: msg } }) survive there — that detail is
+ * the only way to diagnose required-custom-field failures on create — but only
+ * a create-time 400 puts them in front of the user; the rest is operator-facing.
  *
  * Auth: shared Atlassian credentials from ./atlassian-auth.js.
  */
 
 import { getAtlassianAuthHeader, getAtlassianBaseUrl } from "./atlassian-auth.js";
+import { atlassianError, atlassianNetworkError } from "./atlassian-errors.js";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -41,48 +42,24 @@ export interface ProjectMeta {
 
 async function jiraFetch(path: string, init?: { method?: string; body?: string }): Promise<unknown> {
   const base = getAtlassianBaseUrl();
-  const res = await fetch(`${base}${path}`, {
-    method: init?.method ?? "GET",
-    headers: {
-      Authorization: getAtlassianAuthHeader(),
-      Accept: "application/json",
-      ...(init?.body != null ? { "Content-Type": "application/json" } : {}),
-    },
-    body: init?.body,
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!res.ok) {
-    const detail = await readErrorDetail(res);
-    if (res.status === 401) {
-      throw new Error(
-        "Jira rejected the API token (401). Regenerate at id.atlassian.com/manage-profile/security/api-tokens and update ATLASSIAN_API_TOKEN." +
-          detail,
-      );
-    }
-    if (res.status === 403) {
-      throw new Error(
-        `Jira denied access (403) for ${path}. The token's owner needs browse/create permission on the project.` + detail,
-      );
-    }
-    if (res.status === 404) {
-      throw new Error(`Jira resource not found (404) for ${path}. Check the project key / issue key.` + detail);
-    }
-    throw new Error(`Jira API ${path} → HTTP ${res.status}${detail}`);
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method: init?.method ?? "GET",
+      headers: {
+        Authorization: getAtlassianAuthHeader(),
+        Accept: "application/json",
+        ...(init?.body != null ? { "Content-Type": "application/json" } : {}),
+      },
+      body: init?.body,
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch (err) {
+    throw atlassianNetworkError("Jira", path, err);
   }
+  if (!res.ok) throw await atlassianError("Jira", res, path);
   const text = await res.text();
   return text ? (JSON.parse(text) as unknown) : null;
-}
-
-async function readErrorDetail(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as { errorMessages?: string[]; errors?: Record<string, string> };
-    const parts: string[] = [];
-    if (body.errorMessages?.length) parts.push(...body.errorMessages);
-    if (body.errors) parts.push(...Object.entries(body.errors).map(([field, msg]) => `${field}: ${msg}`));
-    return parts.length ? `\nJira says: ${parts.join("; ")}` : "";
-  } catch {
-    return "";
-  }
 }
 
 // ─── Project metadata ───────────────────────────────────────────────────────
