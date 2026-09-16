@@ -5,9 +5,10 @@
  * 时把用户踢回登录页的那条路径。
  */
 
+import { readFile } from "node:fs/promises";
 import type { Request, Response } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { forbidden, internal, invalid, partial, sessionError, upstream } from "../src/core/errors.js";
+import { forbidden, internal, invalid, partial, sessionError, upstream, type ErrorCategory } from "../src/core/errors.js";
 import { errorHandler, HttpError, toAppError, type WireError } from "../src/server/middlewares/error.js";
 
 interface Captured {
@@ -177,5 +178,23 @@ describe("toAppError 幂等", () => {
   it("已经是 AppError 的原样返回", () => {
     const e = upstream("anthropic_auth", "x", { detail: "401" });
     expect(toAppError(e)).toBe(e);
+  });
+});
+
+describe("前后端分类保持同步", () => {
+  it("web/src/errors.ts 覆盖了服务端的每一个 category", async () => {
+    // 两边不能共享同一个文件(根 tsconfig 是 NodeNext + 不含 DOM,web 是 bundler),
+    // 所以用文本守卫:服务端新增分类而前端漏改,这条会红。
+    const web = await readFile(new URL("../web/src/errors.ts", import.meta.url), "utf-8");
+    const serverCategories: ErrorCategory[] = [
+      "validation",
+      "credentials",
+      "session",
+      "forbidden",
+      "upstream",
+      "internal",
+      "partial",
+    ];
+    for (const c of serverCategories) expect(web).toContain(`"${c}"`);
   });
 });

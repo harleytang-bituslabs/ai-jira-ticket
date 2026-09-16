@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
-import { api, errMsg } from "../api";
+import { api } from "../api";
+import { presentError } from "../errors";
 
 export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
   const [oldPassword, setOldPassword] = useState("");
@@ -20,7 +21,7 @@ export function ChangePasswordDialog({ onClose }: { onClose: () => void }) {
       setStatus({ text: "密码已修改", cls: "ok" });
       setTimeout(onClose, 800);
     } catch (e) {
-      setStatus({ text: errMsg(e), cls: "error" });
+      setStatus({ text: presentError(e)?.text ?? "", cls: "error" });
     } finally {
       setBusy(false);
     }

@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
-import { api, errMsg, setSessionToken } from "../api";
+import { api, setSessionToken } from "../api";
+import { presentError } from "../errors";
 import type { User } from "../types";
 
-export function LoginPage({ onLogin }: { onLogin: (u: User) => void }) {
+/** note:被动回到这里的原因(会话过期),否则登录页看着像自己莫名其妙蹦出来的。 */
+export function LoginPage({ onLogin, note = "" }: { onLogin: (u: User) => void; note?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -21,7 +23,8 @@ export function LoginPage({ onLogin }: { onLogin: (u: User) => void }) {
       setSessionToken(d.token); // 存本标签页:另开标签页可登另一个账号
       onLogin(d.user);
     } catch (e) {
-      setErr(errMsg(e));
+      // 登录失败是 credentials,内联;真出了别的事(服务挂了)才弹窗
+      setErr(presentError(e)?.text ?? "");
     } finally {
       setBusy(false);
     }
@@ -47,7 +50,7 @@ export function LoginPage({ onLogin }: { onLogin: (u: User) => void }) {
         <button className="primary" type="submit" disabled={busy}>
           {busy ? "登录中…" : "登录"}
         </button>
-        <div className={"status" + (err ? " error" : "")}>{err}</div>
+        <div className={"status" + (err ? " error" : "")}>{err || note}</div>
       </form>
     </div>
   );

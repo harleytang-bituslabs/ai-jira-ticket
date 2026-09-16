@@ -5,13 +5,12 @@
  */
 
 import { useState } from "react";
-import { ApiError, api, errMsg } from "../api";
+import { ApiError, api } from "../api";
 import { FIELD_TO_CONTROL, isSubmitted, missingFields } from "../constants";
+import { presentError, type Status } from "../errors";
 import type { DraftEntry, DraftFile, Meta, Ticket, User } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { TicketCard } from "./TicketCard";
-
-type Status = { text: string; cls?: "ok" | "error" };
 
 export function Editor({
   meta,
@@ -74,7 +73,7 @@ export function Editor({
       await save();
       setStatus({ text: "已保存", cls: "ok" });
     } catch (e) {
-      setStatus({ text: errMsg(e), cls: "error" });
+      setStatus(presentError(e));
     }
   };
 
@@ -117,8 +116,10 @@ export function Editor({
       if (e instanceof ApiError && e.data.draft) {
         setCurrent({ ...current, id: (e.data.id as string) ?? current.id, draft: e.data.draft as DraftFile });
       }
-      setStatus({ text: errMsg(e), cls: "error" });
       setConfirmOpen(false);
+      // 部分提交必须弹窗:已经有 N 张票不可逆地进了 Jira,这个事实只在这条消息里
+      // 存在一次,而工具栏那行会被切 tab 或重挂载抹掉。
+      setStatus(presentError(e, { as: e instanceof ApiError && e.data.draft ? "dialog" : undefined }));
     } finally {
       setBusy(false);
     }

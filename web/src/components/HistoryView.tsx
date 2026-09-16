@@ -5,7 +5,8 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { api, errMsg } from "../api";
+import { api } from "../api";
+import { presentError } from "../errors";
 import { displayName, isSubmitted } from "../constants";
 import type { DraftEntry, RosterMember, User } from "../types";
 
@@ -40,10 +41,11 @@ export function HistoryView({
 
   const load = () => {
     api<{ drafts: DraftEntry[] }>("GET", isAdmin ? "/api/drafts?scope=all" : "/api/drafts")
-      .then((d) =>
-        setEntries([...d.drafts].sort((a, b) => b.draft.meta.createdAt.localeCompare(a.draft.meta.createdAt))),
-      )
-      .catch((e) => setErr(errMsg(e)));
+      .then((d) => {
+        setErr(""); // 成功要清掉上一次的错误,否则加载好了页面上还挂着旧报错
+        setEntries([...d.drafts].sort((a, b) => b.draft.meta.createdAt.localeCompare(a.draft.meta.createdAt)));
+      })
+      .catch((e) => setErr(presentError(e)?.text ?? ""));
   };
   useEffect(load, [isAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -172,7 +174,8 @@ export function HistoryView({
         )}
       </div>
 
-      {err && <div className="empty">{err}</div>}
+      {/* 以前这里用 .empty(灰字居中),读起来像「没有记录」而不是「加载失败」 */}
+      {err && <div className="status error loadErr">{err}</div>}
       {!err && entries === null && <div className="empty">加载中…</div>}
       {entries?.length === 0 && <div className="empty">还没有开票记录</div>}
       {entries && entries.length > 0 && shown.length === 0 && <div className="empty">没有匹配筛选条件的记录</div>}

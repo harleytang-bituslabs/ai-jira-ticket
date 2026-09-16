@@ -5,8 +5,9 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { api, errMsg } from "../api";
+import { api } from "../api";
 import { DEFAULT_TYPE, defaultPriority, orderedTypes, parentOptionLabel, PRIORITY_COLORS, TYPE_COLORS } from "../constants";
+import { presentError } from "../errors";
 import type { Flash } from "../pages/MainPage";
 import type { DraftEntry, DraftFile, IssueRef, Meta, User } from "../types";
 import { Seg } from "./Seg";
@@ -108,7 +109,7 @@ export function ComposeForm({
         cls: "ok",
       });
     } catch (e) {
-      setStatus({ text: errMsg(e), cls: "error" });
+      setStatus(presentError(e));
     } finally {
       setBusy(false);
     }
@@ -163,7 +164,9 @@ export function ComposeForm({
       onDrafted({ id: data.id, owner: user.email, draft: data.draft });
       setStatus({ text: `拆出 ${data.draft.tickets.length} 张，可在卡片里微调后提交`, cls: "ok" });
     } catch (e) {
-      setStatus({ text: errMsg(e), cls: "error" });
+      // 上游失败(AI 服务/Atlassian)走弹窗:用户刚等了十几秒,
+      // 而这行红字在长表单的最底部,右对齐,很容易看不见
+      setStatus(presentError(e));
     } finally {
       setBusy(false);
     }

@@ -4,16 +4,18 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { api, clearSessionToken, errMsg } from "../api";
+import { api, clearSessionToken } from "../api";
 import { AdminPanel } from "../components/AdminPanel";
 import { ChangePasswordDialog } from "../components/ChangePasswordDialog";
 import { ComposeForm } from "../components/ComposeForm";
 import { Editor } from "../components/Editor";
 import { HistoryView } from "../components/HistoryView";
 import { configFreshness } from "../constants";
+import { presentError, type Status } from "../errors";
 import type { DraftEntry, Meta, User } from "../types";
 
-export type Flash = { text: string; cls?: "ok" | "error" } | null;
+/** @deprecated 用 Status（web/src/errors.ts）；这里保留别名免得动一堆签名。 */
+export type Flash = Status | null;
 type Tab = "create" | "history" | "admin";
 
 export function MainPage({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -30,7 +32,10 @@ export function MainPage({ user, onLogout }: { user: User; onLogout: () => void 
   }, []);
 
   useEffect(() => {
-    reloadMeta().catch((e) => setMetaErr(errMsg(e)));
+    // 挂载时的自动拉取:用户没在等它,失败走内联而不是弹窗糊脸
+    reloadMeta()
+      .then(() => setMetaErr(""))
+      .catch((e) => setMetaErr(presentError(e, { background: true })?.text ?? ""));
   }, [reloadMeta]);
 
   // 登出 = 丢掉本标签页的 token。服务端无状态,没有要通知的东西;别的标签页不受影响。

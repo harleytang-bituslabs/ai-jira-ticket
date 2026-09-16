@@ -38,8 +38,10 @@ button.ghost { background:#fff; border-color:var(--line); }
 button.danger { background:#fff; border-color:var(--line); color:#b91c1c; }
 button:disabled { opacity:.5; cursor:wait; }
 .status { font-size:13px; color:var(--muted); white-space:pre-wrap; }
-.status.error { color:#b91c1c; }
+/* 光靠颜色不够：一行 13px 红字混在灰色提示里太容易被当成说明文字读过去 */
+.status.error { color:#b91c1c; border-left:3px solid #dc2626; background:#fef2f2; padding:6px 10px; border-radius:0 4px 4px 0; }
 .status.ok { color:var(--green); }
+.loadErr { margin:24px 0; }
 .hint { font-size:12px; color:var(--muted); margin-top:6px; }
 .invalid { border-color:#dc2626 !important; background:#fef2f2 !important; }
 
@@ -155,6 +157,14 @@ button:disabled { opacity:.5; cursor:wait; }
 .modal .mrow .meta { color:var(--muted); white-space:nowrap; }
 .modal .mfoot { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
 .modal input { width:100%; }
+/* 错误弹窗：沿用 .modal 的尺寸与留白，只加一条红顶边和折叠区的样式 */
+.modal.err { border-top:3px solid #dc2626; }
+.modal.err h2 { color:#b91c1c; }
+.modal .errText { font-size:14px; line-height:1.6; white-space:pre-wrap; margin:10px 0 4px; }
+.modal .errDetail { margin-top:12px; font-size:12px; color:var(--muted); }
+.modal .errDetail summary { cursor:pointer; }
+.modal .errDetail pre { white-space:pre-wrap; word-break:break-all; background:#f6f7f9; border-radius:6px; padding:8px 10px; margin:8px 0 0; }
+.modal .errRef { margin-top:8px; font-family:ui-monospace, monospace; }
 
 /* 管理面板 */
 .tableWrap { overflow-x:auto; }

@@ -9,7 +9,8 @@
  */
 
 import { useEffect, useState, type FormEvent } from "react";
-import { api, errMsg } from "../api";
+import { api } from "../api";
+import { presentError } from "../errors";
 import { LEVEL_LABELS, TEAMS } from "../constants";
 import { BoardPicker } from "./BoardPicker";
 import type { AdminUser, UserLevel } from "../types";
@@ -39,7 +40,7 @@ export function AdminPanel() {
   const load = () => {
     api<{ users: AdminUser[] }>("GET", "/api/admin/users")
       .then((d) => setUsers([...d.users].sort(byLevelThenName)))
-      .catch((e) => setStatus({ text: errMsg(e), cls: "error" }));
+      .catch((e) => setStatus(presentError(e)));
   };
   useEffect(load, []);
   useEffect(() => {
@@ -55,7 +56,8 @@ export function AdminPanel() {
       await fn();
       load();
     } catch (e) {
-      setStatus({ text: errMsg(e), cls: "error" });
+      // 写操作失败必须被确认 —— 表格很长时内联那行可能在屏幕外
+      setStatus(presentError(e, { as: "dialog" }));
     } finally {
       setBusy(false);
     }
