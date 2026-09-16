@@ -81,5 +81,5 @@ From the owner's stated preferences (HANDOFF §9) — these override default age
 Shared dev server, so:
 
 - **Never modify global git config.** Repo-level only.
-- `git push` 403s because the global credential helper holds a colleague's token — use `git -c credential.helper= push`. Don't delete `/tmp/git-creds-*`.
+- `git push`: the global helper is `cache --timeout=3600`, so it hands over **whichever token was typed last**. If that was a colleague's, the push 403s — then, and only then, use `git -c credential.helper= push`. If Harley has pushed within the hour, plain `git push` works and is correct; clearing the helper in that case throws away the one usable credential and fails with `could not read Username`. Check `git log -1 --format=%an` on the remote ref's reflog (`.git/logs/refs/remotes/origin/<branch>`) to see who pushed last. Don't delete `/tmp/git-creds-*`.
 - `pgrep -f`/`pkill -f` patterns can match the invoking shell and kill it. Use `"tsx src/serve[r]"`, and put the kill and the restart in *separate* tool calls.
