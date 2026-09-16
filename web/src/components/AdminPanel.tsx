@@ -92,6 +92,8 @@ export function AdminPanel() {
       const d = await api<{ boards: string[] }>("GET", `/api/admin/participation?email=${encodeURIComponent(email)}`);
       return d.boards;
     } catch {
+      // 不打断建号流程,但也别装作「这人没有参与记录」—— 两者后果完全不同
+      setStatus({ text: "自动识别 board 失败，请手动勾选", cls: "error" });
       return null;
     }
   };

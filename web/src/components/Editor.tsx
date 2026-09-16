@@ -50,7 +50,12 @@ export function Editor({
   const deleteTicket = async (t: Ticket) => {
     if (draft.tickets.length === 1) {
       if (!confirm("这是最后一张票——将删除整条草稿记录（不影响 Jira）。确定？")) return;
-      await api("DELETE", `/api/drafts/${encodeURIComponent(current.id)}`);
+      try {
+        await api("DELETE", `/api/drafts/${encodeURIComponent(current.id)}`);
+      } catch (e) {
+        presentError(e, { as: "dialog" }); // 调用点是 void deleteTicket(),没有 catch 就彻底没声音
+        return;
+      }
       onRecordDeleted();
       return;
     }

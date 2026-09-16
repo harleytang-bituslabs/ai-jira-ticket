@@ -84,15 +84,26 @@ export function HistoryView({
     const mine = e.owner === user.email;
     if (!confirm(mine ? "删除这条本地记录？已上板的 Jira 票不受影响。" : `删除 ${e.owner} 的这条记录？已上板的 Jira 票不受影响。`)) return;
     const q = mine ? "" : `?owner=${encodeURIComponent(e.owner)}`;
-    await api("DELETE", `/api/drafts/${encodeURIComponent(e.id)}${q}`);
+    try {
+      await api("DELETE", `/api/drafts/${encodeURIComponent(e.id)}${q}`);
+    } catch (err) {
+      // 以前这里没有 catch:删除失败时那一行还留在屏幕上,看着像按钮坏了
+      presentError(err, { as: "dialog" });
+      return;
+    }
     if (currentId === e.id && mine) onDeletedCurrent();
     load();
   };
 
   const cleanup = async () => {
     if (!confirm("将删除你自己所有票都已提交的本地记录（不影响 Jira 上的票）。继续？")) return;
-    const { removed } = await api<{ removed: number }>("POST", "/api/drafts/cleanup");
-    alert(`已清理 ${removed} 条记录`);
+    try {
+      const { removed } = await api<{ removed: number }>("POST", "/api/drafts/cleanup");
+      alert(`已清理 ${removed} 条记录`); // 成功沿用 alert,改它属于 UX 重设计
+    } catch (err) {
+      presentError(err, { as: "dialog" }); // 成功有弹窗、失败什么都没有,原来就是这么不对称
+      return;
+    }
     load();
   };
 
