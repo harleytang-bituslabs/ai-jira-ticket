@@ -12,7 +12,8 @@
     "fetch-issues": "tsx scripts/fetch-issues.ts",
     "fetch-users": "tsx scripts/fetch-users.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p web"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p web",
+    "deploy": "bash scripts/deploy.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.1",
