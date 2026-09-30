@@ -1,0 +1,23 @@
+[Unit]
+Description=ajt · AI 开票 web service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/harley/projects/ai-jira-ticket
+# tsx 直接跑 TS 源码,和 apprunner.yaml 的启动方式一致
+ExecStart=/home/ubuntu/harley/projects/ai-jira-ticket/node_modules/.bin/tsx src/server/index.ts
+# 这两个压过 .env(dotenv 不覆盖已存在的环境变量)。凭据仍然从 .env 读。
+Environment=AJT_HOST=0.0.0.0
+Environment=AJT_PORT=9300
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=3
+# 跑了 14 天其实早就连不上 —— 这次让 systemd 盯着它
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ajt
+
+[Install]
+WantedBy=default.target
