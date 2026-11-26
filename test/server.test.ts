@@ -167,7 +167,7 @@ describe("open endpoints", () => {
 });
 
 describe("auth", () => {
-  it("API is gated: no cookie → 401", async () => {
+  it("API is gated: no token → 401", async () => {
     for (const probe of [request(app).get("/api/meta"), request(app).get("/api/drafts")]) {
       const r = await probe;
       expect(r.status).toBe(401);
@@ -193,18 +193,18 @@ describe("auth", () => {
     const me = await agent.get("/api/me");
     expect(me.body.user).toMatchObject({ email: ALICE, name: "Alice", level: "l1" });
     expect(me.body.user.scrypt).toBeUndefined();
-    // 每个人都用工作邮箱登录,不再有独立的 Jira 邮箱概念
+    // 登录邮箱就是 Jira 身份,用户记录里没有单独的 Jira 邮箱字段
     expect(me.body.user.jiraEmail).toBeUndefined();
 
     // 没有头就是匿名 —— 登出 = 前端清掉本标签页的 token,服务端无状态
     expect((await request(app).get("/api/me")).status).toBe(401);
   });
 
-  it("登录不再种 cookie —— 身份只住在各标签页的 token 里,谁也污染不了谁", async () => {
+  it("登录不种 cookie —— 身份只住在各标签页的 token 里,谁也污染不了谁", async () => {
     const r = await request(app).post("/api/login").send({ email: ALICE, password: PASSWORD });
     expect(r.headers["set-cookie"]).toBeUndefined();
 
-    // 就算手工带上旧 cookie 也不认
+    // 就算手工把 token 塞进 cookie 也不认
     const spoof = await request(app).get("/api/me").set("Cookie", `ajt_session=${r.body.token as string}`);
     expect(spoof.status).toBe(401);
   });
@@ -271,7 +271,7 @@ describe("/api/meta 的指派名册", () => {
     expect(mine.length).toBe(1);
   });
 
-  it("L2 的名册就是本团队的活跃账号,不再是全项目参与者", async () => {
+  it("L2 的名册是本团队的活跃账号,而非全项目参与者", async () => {
     const agent = await login(BOB);
     const r = await agent.get("/api/meta");
     const emails = (r.body.roster as Array<{ email: string }>).map((m) => m.email).sort();

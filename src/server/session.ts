@@ -4,11 +4,13 @@
  * Passwords: scrypt (memory-hard KDF) with a per-user random salt, verified
  * via timingSafeEqual.
  *
- * Sessions: stateless signed cookie. Token = base64url(payload).base64url(
+ * Sessions: stateless signed token, sent as `Authorization: Bearer` (never a
+ * cookie — see middlewares/auth.ts). Token = base64url(payload).base64url(
  * HMAC-SHA256(payload, secret)) where payload = {sub: email, exp}. No session
  * store means container restarts / horizontal scaling don't log anyone out.
- * Level/active are NOT trusted from the cookie — middleware re-reads the user
- * directory on every request, so disabling an account takes effect at once.
+ * Level/active are NOT trusted from the token — middleware re-reads the user
+ * directory on every request, so disabling an account takes effect within the
+ * user store's 30s cache.
  */
 
 import { createHmac, randomBytes, scrypt as scryptCb, timingSafeEqual } from "node:crypto";

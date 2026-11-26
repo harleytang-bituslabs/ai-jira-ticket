@@ -18,7 +18,7 @@ export const UNAUTHORIZED_EVENT = "ajt:unauthorized";
 
 /**
  * 会话 token 放 sessionStorage —— 按标签页隔离,一台电脑开两个标签页就能登两个
- * 账号。cookie 仍在(服务端兜底),但只要有 token,Authorization 头优先生效。
+ * 账号。每个请求走 Authorization 头;服务端既不发也不认 cookie。
  */
 const TOKEN_KEY = "ajt.token";
 export const setSessionToken = (t: string): void => sessionStorage.setItem(TOKEN_KEY, t);
@@ -42,11 +42,11 @@ export async function api<T>(method: string, url: string, body?: unknown): Promi
       ...(typeof data.detail === "string" ? { detail: data.detail } : {}),
       ...(typeof data.requestId === "string" ? { requestId: data.requestId } : {}),
     };
-    // 只有服务端说「你的会话没了」才清 token。以前是「见 401 就清」,于是
-    // Anthropic 的 401(API key 失效)和输错旧密码都能把人踢出去。
+    // 只有服务端说「你的会话没了」才清 token:Anthropic 的 401(API key 失效)
+    // 和输错旧密码也是 401,见 401 就清会把人踢出去。
     const isSession = wire.category
       ? wire.category === "session"
-      : r.status === 401 && !url.startsWith("/api/login"); // 老响应的退路
+      : r.status === 401 && !url.startsWith("/api/login"); // 没带 category 的错误体按状态码判断
     if (isSession) {
       clearSessionToken();
       if (!url.startsWith("/api/me")) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));

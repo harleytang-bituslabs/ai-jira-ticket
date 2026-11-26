@@ -2,6 +2,8 @@
 
 目标形态：GitHub `main` 有新提交 → App Runner 自动构建 → 滚动部署（零停机）→ 用户打开 HTTPS 网址登录即用。
 
+线上服务目前跑在 EC2 的 systemd unit 上（见 [README 的「部署」](../README.md#部署)），App Runner 的 AWS 资源还没有建。本文是迁移到 App Runner 的操作清单。
+
 仓库里已备好 [`apprunner.yaml`](../apprunner.yaml)（构建与运行配置）。下面是**你需要在控制台做的事**，按顺序来。
 
 ## 前置：状态与密钥的位置
@@ -10,7 +12,7 @@
 |---|---|---|
 | 草稿 / 开票历史 | S3 `bituslabs-ai-jira-ticket/drafts/{登录名}/` | 容器磁盘易失，必须放 S3 |
 | 用户表（账号/密码哈希/级别） | S3 `bituslabs-ai-jira-ticket/users.json` | 同上 |
-| 规范·看板·名册缓存 | 容器磁盘 `.cache/` | 首启自动拉取（约 40 秒），重启即重拉，无需人工干预 |
+| 规范·看板·名册·项目清单缓存 | S3 `bituslabs-ai-jira-ticket/cache/` | 全员共享一份，容器启动直接读；桶里没有时首启后台自动拉取（约 40 秒） |
 | API 密钥 / 会话密钥 | Secrets Manager | 绝不写进仓库或镜像 |
 
 ## 步骤 1：把三个密钥放进 Secrets Manager
@@ -88,20 +90,24 @@ App Runner 的 **instance role**（不是 access role）需要这份最小权限
 ## 步骤 4：首次部署后的检查
 
 1. 打开 App Runner 给的网址 `https://xxxx.awsapprunner.com` → 应该看到登录页
-2. 用 `admin` / 你设的密码登录 → 「管理」tab 能看到三个账号（说明 S3 用户表读到了）
-3. 「历史」tab → 应看到 12 条既有记录（说明 S3 草稿读到了）
-4. 首启后约 40 秒内 `/api/meta` 可能报错（缓存在后台拉取），稍等刷新即好；日志里会打印 `✓ 缓存已就绪`
+2. 用管理员账号登录 → 「管理」tab 能看到 EC2 上那套服务里的全部账号（说明 S3 用户表读到了）
+3. 「历史」tab → 能看到已有的开票记录（说明 S3 草稿读到了）
+4. 开票页的父级、指派下拉有内容（说明 S3 的 `cache/` 读到了）。若桶里还没有缓存，首启后约 40 秒内 `/api/meta` 可能报错，日志打印 `✓ 缓存已就绪` 后刷新即可
 
-## 步骤 5（可选）：绑自定义域名
+## 步骤 5：停掉 EC2 上的服务
 
-App Runner → 服务 → **Custom domains** → 添加 `ajt.bituslabs.com` → 控制台给出几条 CNAME → 在 DNS 上加好 → 证书自动签发续期。原来的 `*.awsapprunner.com` 网址继续可用。
+App Runner 验证通过后，在 EC2 上执行 `systemctl --user disable --now ajt`。两边共用同一个 S3 桶，但代码版本会各自走；对外只留一个入口，免得同事手里有两个地址。
+
+## 步骤 6（可选）：绑自定义域名
+
+App Runner → 服务 → **Custom domains** → 添加 `ajt.bituslabs.com` → 控制台给出几条 CNAME → 在 DNS 上加好 → 证书自动签发续期。默认的 `*.awsapprunner.com` 网址继续可用。
 
 ## 上线后的日常
 
-- **发版**：合并到 `main` 就完事。App Runner 自动构建部署，失败会自动保留旧版本。
+- **发版**：推到 `main` 就完事。App Runner 自动构建部署，失败会自动保留旧版本。
 - **回滚**：`git revert` 后推 main（App Runner 没有一键回滚按钮，回滚就是再发一版）。
 - **加人**：管理员在「管理」tab 建号，不需要动部署。
-- **改规范/看板变动**：界面点「更新config」即可（写的是容器内缓存，重启会重拉，不影响正确性）。
+- **改规范/看板变动**：界面点「更新config」即可（写进 S3 的 `cache/`，全员立即共用）。
 
 ## 成本预估
 

@@ -6,8 +6,8 @@
  * user directory as one document, and the shared reference cache under one
  * flat prefix); otherwise local fs for development.
  *
- * The shared cache is why a container no longer waits ~40s on Atlassian at
- * boot: whatever an admin last refreshed is already sitting in the bucket.
+ * The shared cache lets the service answer at boot without waiting ~40s on
+ * Atlassian: whatever an admin last refreshed is already sitting in the bucket.
  *
  * Binds to 127.0.0.1 by default — set AJT_HOST=0.0.0.0 to expose.
  */

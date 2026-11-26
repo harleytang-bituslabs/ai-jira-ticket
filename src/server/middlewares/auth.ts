@@ -37,8 +37,8 @@ export function attachAuth(users: UserStore, secret: string) {
   };
 }
 
-// Express 5 forwards synchronous throws to the error handler, which is what
-// gives these responses a category — 401 alone can no longer be told apart
+// Express 5 forwards synchronous throws to the error handler, which gives
+// these responses the `session` category — a bare 401 can't be told apart
 // from a provider's 401.
 export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
   if (!req.user) throw sessionError("session_expired", "未登录或会话已过期");

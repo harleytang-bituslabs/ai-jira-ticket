@@ -14,7 +14,7 @@ Environment=AJT_PORT=9300
 Environment=NODE_ENV=production
 Restart=always
 RestartSec=3
-# 跑了 14 天其实早就连不上 —— 这次让 systemd 盯着它
+# 日志进 journald: journalctl --user -u ajt -f
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ajt

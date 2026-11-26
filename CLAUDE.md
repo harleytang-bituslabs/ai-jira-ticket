@@ -4,10 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Read first
 
-- **[HANDOFF.md](HANDOFF.md)** — current state, open TODOs, traps already hit, and the owner's collaboration preferences. Read it before any non-trivial change.
-- **[README.md](README.md)** — what the product does, permission matrix, full env-var reference, deployment.
-
-Both are in Chinese and kept current; this file only holds what they don't: commands, the architecture invariants, and the rules that constrain how changes get made here.
+**[README.md](README.md)** (Chinese) — what the product does, permission matrix, env-var reference, data layout, deployment, known limits and TODOs. This file holds only what it doesn't: commands, the architecture invariants, and the rules that constrain how changes get made here.
 
 ## Commands
 
@@ -26,9 +23,14 @@ npm run fetch-issues              # board snapshot → .cache/issues.json
 npm run fetch-users               # project participants → .cache/users.json
 npm run ajt -- draft "..."        # CLI personal mode (no login, no S3)
 npm run ajt -- submit drafts/x.json   # --dry-run / --yes / --force
+
+npm run deploy                    # scripts/deploy.sh: typecheck → test → build:web → restart → /healthz
+systemctl --user status ajt       # the live service; logs: journalctl --user -u ajt -f
 ```
 
-There is no build step for the backend — `tsx` runs the TypeScript sources directly, in dev and in the container.
+There is no build step for the backend — `tsx` runs the TypeScript sources directly, in dev and in production.
+
+The CLI and the `fetch-*` scripts only touch the local `.cache/`. The live service runs in S3 mode and reads the bucket's `cache/` prefix, so refreshing it means the web UI's 「更新config」 button (`POST /api/refresh`), not these commands.
 
 **IDE diagnostics go stale after rapid edits.** Judge type errors only by running `npm run typecheck`.
 
@@ -46,7 +48,7 @@ src/cli/       commander shell over src/core
 web/           React + Vite + TS; pages/ + components/; built to web/dist
 ```
 
-### Invariants — breaking these has caused real bugs
+### Invariants
 
 - **`src/core/schema.ts` is the type hub.** Tickets reference each other by `localId` (`"t1"`) because Jira keys don't exist until submit; `submit` topologically sorts, creates parents first, and writes the real keys back. Two schema layers: the plain object shape sent to the LLM, and the same shape plus cross-field refinements (localId uniqueness, dangling refs, parent cycles) validated locally after generation and again before submit.
 - **`services/policy.ts::enforcePolicy` is the only place permission rules live.** It runs on all three write paths (generate / save / submit). Never add a parallel check in a route; the frontend only hides things. Its `assertBoardVisible` half is exported separately because the generate path must reject before the LLM call — `enforcePolicy` runs there only as a post-generation backstop.
@@ -67,12 +69,21 @@ web/           React + Vite + TS; pages/ + components/; built to web/dist
 - "Start date" is the custom field `customfield_10015`, configured as `startDateField` in `config.json`; empty means don't send.
 - Story/Task must be created under an Epic; Sub-tasks require `assignee` and `dueDate` and carry no priority.
 
+## Branch and deployment
+
+- **One branch: `main`.** There is no `dev` or feature branch; work and commit on `main`.
+- **This working directory is production.** The live service is the user-level systemd unit `ajt` ([deploy/ajt.service](deploy/ajt.service), installed at `~/.config/systemd/user/`), running `tsx` against these sources on `0.0.0.0:9300` with `Restart=always`. Consequences:
+  - `npm run build:web` swaps the frontend for every user immediately (Express reads `web/dist` from disk per request).
+  - Backend edits go live on the next restart or `npm run deploy`, committed or not — the deploy script never touches git.
+  - Restart or stop only through `systemctl --user restart|stop ajt`. Killing the process just makes systemd respawn it 3s later.
+- App Runner (`apprunner.yaml`, [docs/deploy-apprunner.md](docs/deploy-apprunner.md)) and the Docker/CodeBuild route are prepared but not provisioned; pushing to GitHub deploys nothing.
+
 ## Working on this repo
 
-From the owner's stated preferences (HANDOFF §9) — these override default agent behavior:
+The owner's stated preferences — these override default agent behavior:
 
 - **Get agreement before changing code.** State what you intend to change and its blast radius first.
-- **Do not commit or push on his behalf.** Finish a chunk, then hand him the full commit command including the message.
+- **Do not commit or push on his behalf.** Finish a chunk, then hand him the full commit command including the message, with no `Co-Authored-By` trailer.
 - Work in stages: end each stage with green tests plus the commit command, and wait for "继续" before the next.
 - Prefer refactoring over stacking patches; he has explicitly authorized cleanup when it's warranted.
 - On UI work the acceptance bar is equivalent migration — don't redesign visually on your own initiative.
@@ -81,5 +92,5 @@ From the owner's stated preferences (HANDOFF §9) — these override default age
 Shared dev server, so:
 
 - **Never modify global git config.** Repo-level only.
-- `git push`: the global helper is `cache --timeout=3600`, so it hands over **whichever token was typed last**. If that was a colleague's, the push 403s — then, and only then, use `git -c credential.helper= push`. If Harley has pushed within the hour, plain `git push` works and is correct; clearing the helper in that case throws away the one usable credential and fails with `could not read Username`. Check `git log -1 --format=%an` on the remote ref's reflog (`.git/logs/refs/remotes/origin/<branch>`) to see who pushed last. Don't delete `/tmp/git-creds-*`.
-- `pgrep -f`/`pkill -f` patterns can match the invoking shell and kill it. Use `"tsx src/serve[r]"`, and put the kill and the restart in *separate* tool calls.
+- `git push` is plain `git push`. Repos under `~/harley` pick up Harley's identity and his own `store` credential helper through a path-scoped include (`/home/ubuntu/harley/.gitconfig-harley`). Never add `-c credential.helper=`: it clears that helper too and the push fails.
+- `pgrep -f`/`pkill -f` patterns can match the invoking shell and kill it. When looking for stray instances, use `"tsx src/serve[r]"`.

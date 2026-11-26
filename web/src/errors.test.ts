@@ -52,7 +52,7 @@ describe("presentation —— 谁该弹窗", () => {
     expect(presentation(problem("forbidden"))).toBe("inline");
   });
 
-  it("回归:API key 失效不再被当成会话问题", () => {
+  it("API key 失效不被当成会话问题", () => {
     const p = classify(apiErr("upstream", "anthropic_auth"));
     expect(presentation(p)).toBe("dialog");
     expect(presentation(p)).not.toBe("session");

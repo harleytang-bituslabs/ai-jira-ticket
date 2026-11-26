@@ -16,7 +16,7 @@ describe("password hashing (scrypt)", () => {
   });
 });
 
-describe("session tokens (signed cookie)", () => {
+describe("session tokens (signed, stateless)", () => {
   const SECRET = "test-secret";
 
   it("round-trips the email", () => {

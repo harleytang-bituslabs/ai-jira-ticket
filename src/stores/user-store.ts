@@ -127,8 +127,9 @@ export class S3UserStore extends JsonDocUserStore {
       return (await r.Body?.transformToString()) ?? null;
     } catch (err) {
       if (isNoSuchKey(err)) return null;
-      // Runs inside attachAuth on every request, so an S3 outage used to 400
-      // every route with the bucket name in the message.
+      // Runs inside attachAuth on every request: classify it as an upstream
+      // storage error, or an S3 outage fails every route with the bucket name
+      // in the message.
       throw s3Error(err, `GetObject ${this.key}`);
     }
   }

@@ -87,7 +87,7 @@ export function HistoryView({
     try {
       await api("DELETE", `/api/drafts/${encodeURIComponent(e.id)}${q}`);
     } catch (err) {
-      // 以前这里没有 catch:删除失败时那一行还留在屏幕上,看着像按钮坏了
+      // 删除失败必须报出来:那一行还留在屏幕上,不报看着像按钮坏了
       presentError(err, { as: "dialog" });
       return;
     }
@@ -99,9 +99,9 @@ export function HistoryView({
     if (!confirm("将删除你自己所有票都已提交的本地记录（不影响 Jira 上的票）。继续？")) return;
     try {
       const { removed } = await api<{ removed: number }>("POST", "/api/drafts/cleanup");
-      alert(`已清理 ${removed} 条记录`); // 成功沿用 alert,改它属于 UX 重设计
+      alert(`已清理 ${removed} 条记录`); // 换掉 alert 属于 UX 重设计,不在这里做
     } catch (err) {
-      presentError(err, { as: "dialog" }); // 成功有弹窗、失败什么都没有,原来就是这么不对称
+      presentError(err, { as: "dialog" }); // 成功有弹窗,失败也要有
       return;
     }
     load();
@@ -185,7 +185,7 @@ export function HistoryView({
         )}
       </div>
 
-      {/* 以前这里用 .empty(灰字居中),读起来像「没有记录」而不是「加载失败」 */}
+      {/* 用错误样式而非 .empty(灰字居中):后者读起来像「没有记录」而不是「加载失败」 */}
       {err && <div className="status error loadErr">{err}</div>}
       {!err && entries === null && <div className="empty">加载中…</div>}
       {entries?.length === 0 && <div className="empty">还没有开票记录</div>}

@@ -120,7 +120,7 @@ describe("errorHandler — 分类到状态码", () => {
     expect(r.body.recovery).toEqual(recovery);
   });
 
-  it("ZodError 不再把 JSON blob 丢给用户", () => {
+  it("ZodError 不把 JSON blob 丢给用户", () => {
     const zod = Object.assign(new Error("[{\"code\":\"invalid_type\"}]"), {
       name: "ZodError",
       issues: [{ path: ["tickets", 0, "summary"], message: "Required" }],
